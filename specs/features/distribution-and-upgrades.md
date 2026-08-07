@@ -37,8 +37,10 @@ range. AI note generation is advisory: failure falls back to GitHub-generated
 notes and never bypasses verification or blocks a verified release.
 
 Upgrades drain work before replacing the daemon. Schema migration is explicit,
-backed up, and reversible. A host binary refuses incompatible guest agents and
-base-image manifests.
+backed up, and reversible. A host binary accepts signed base images from older
+package releases while their manifest schema and guest protocol remain
+compatible, authenticating the exact guest revision and executable checksum
+recorded at adoption. It refuses unsupported schemas or protocols.
 
 ## Acceptance outcomes
 

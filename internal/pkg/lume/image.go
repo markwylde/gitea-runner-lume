@@ -36,7 +36,7 @@ type ImageManifest struct {
 	Signature string               `json:"signature"`
 }
 
-func LoadImageManifest(path string, signingPublicKey, guestPublicKey ed25519.PublicKey, expectedImage, expectedStorage, expectedRevision string) (ImageManifest, error) {
+func LoadImageManifest(path string, signingPublicKey, guestPublicKey ed25519.PublicKey, expectedImage, expectedStorage string) (ImageManifest, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return ImageManifest{}, err
@@ -53,8 +53,8 @@ func LoadImageManifest(path string, signingPublicKey, guestPublicKey ed25519.Pub
 		return ImageManifest{}, err
 	}
 	payload := manifest.Payload
-	if payload.SchemaVersion != 2 || payload.Image != expectedImage || payload.Storage != expectedStorage || payload.GuestRevision != expectedRevision {
-		return ImageManifest{}, errors.New("image manifest does not match configured image, storage, or guest revision")
+	if payload.SchemaVersion != 2 || payload.Image != expectedImage || payload.Storage != expectedStorage {
+		return ImageManifest{}, errors.New("image manifest does not match configured image or storage")
 	}
 	if err := validateImageManifestPayload(payload); err != nil {
 		return ImageManifest{}, err

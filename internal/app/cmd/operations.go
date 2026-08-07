@@ -158,7 +158,7 @@ func loadDoctorCmd(ctx context.Context, configFile *string) *cobra.Command {
 			return err
 		}
 		for name, profile := range cfg.Lume.Profiles {
-			_, err := lume.LoadImageManifest(profile.Manifest, signingKey, guestKey, profile.Image, cfg.Lume.Storage, ver.Version())
+			_, err := lume.LoadImageManifest(profile.Manifest, signingKey, guestKey, profile.Image, cfg.Lume.Storage)
 			if err := check("image "+name, err); err != nil {
 				return err
 			}
@@ -438,7 +438,11 @@ func attestBaseImage(ctx context.Context, cfg *config.Config, profile config.Lum
 	if _, err := rand.Read(ids); err != nil {
 		return guestproto.Hello{}, err
 	}
-	hello := guestproto.Hello{InstallationID: cfg.Lume.InstallationID, LeaseID: hex.EncodeToString(ids[:16]), WorkerID: hex.EncodeToString(ids[16:32]), TaskID: 1, Nonce: hex.EncodeToString(ids[32:64]), Revision: ver.Version()}
+	revision := expectedAttestation.Revision
+	if revision == "" {
+		revision = ver.Version()
+	}
+	hello := guestproto.Hello{InstallationID: cfg.Lume.InstallationID, LeaseID: hex.EncodeToString(ids[:16]), WorkerID: hex.EncodeToString(ids[16:32]), TaskID: 1, Nonce: hex.EncodeToString(ids[32:64]), Revision: revision}
 	hello.OS, hello.Architecture, hello.OSVersion = expectedAttestation.OS, expectedAttestation.Architecture, expectedAttestation.OSVersion
 	hello.AgentSHA256, hello.UID = expectedAttestation.AgentSHA256, expectedAttestation.UID
 	root := "/private/var/tmp/gitea-runner-lume/" + hello.WorkerID
@@ -477,7 +481,7 @@ func validateImages(ctx context.Context, command *cobra.Command, cfg *config.Con
 			continue
 		}
 		matched = true
-		manifest, err := lume.LoadImageManifest(profile.Manifest, signingKey, guestKey, profile.Image, cfg.Lume.Storage, ver.Version())
+		manifest, err := lume.LoadImageManifest(profile.Manifest, signingKey, guestKey, profile.Image, cfg.Lume.Storage)
 		if err != nil {
 			return fmt.Errorf("profile %s: %w", name, err)
 		}
@@ -488,7 +492,7 @@ func validateImages(ctx context.Context, command *cobra.Command, cfg *config.Con
 		if vm.State != lume.StateStopped || vm.Storage != cfg.Lume.Storage {
 			return fmt.Errorf("profile %s base VM is not stopped in configured storage", name)
 		}
-		expected := guestproto.Hello{OS: manifest.Payload.GuestOS, Architecture: manifest.Payload.GuestArchitecture, OSVersion: manifest.Payload.GuestOSVersion, AgentSHA256: manifest.Payload.GuestAgentSHA256, UID: manifest.Payload.GuestUID}
+		expected := guestproto.Hello{Revision: manifest.Payload.GuestRevision, OS: manifest.Payload.GuestOS, Architecture: manifest.Payload.GuestArchitecture, OSVersion: manifest.Payload.GuestOSVersion, AgentSHA256: manifest.Payload.GuestAgentSHA256, UID: manifest.Payload.GuestUID}
 		if _, err := attestBaseImage(ctx, cfg, profile, expected); err != nil {
 			return fmt.Errorf("profile %s attestation: %w", name, err)
 		}
