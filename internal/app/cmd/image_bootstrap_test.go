@@ -34,7 +34,7 @@ func TestBootstrapPasswordUsesDocumentedDefaultAndSecureFile(t *testing.T) {
 }
 
 func TestBootstrapScriptContainsRequiredSecurityTransitions(t *testing.T) {
-	script := bootstrapScript("1.2.3")
+	script := bootstrapScript("1.2.3", "git.internal.example")
 	for _, required := range []string{
 		"gitea-runner-lume 1.2.3", bootstrapNodeVersion, bootstrapNodeSHA256,
 		"shasum -a 256 -c", "PasswordAuthentication no", "KbdInteractiveAuthentication no",
@@ -42,6 +42,7 @@ func TestBootstrapScriptContainsRequiredSecurityTransitions(t *testing.T) {
 		"dseditgroup -o edit -d lume -t user admin", "ShadowHashData", "AuthenticationAuthority",
 		"/etc/gitea-runner-lume/guest.key", "/etc/gitea-runner-lume/host.pub",
 		"GRL_ROOT_BOOTSTRAP_OK", "grl-maintenance", "/sbin/shutdown -h now",
+		"/tmp/gitea-runner-lume.hosts", "git.internal.example",
 	} {
 		require.Contains(t, script, required)
 	}
@@ -49,6 +50,21 @@ func TestBootstrapScriptContainsRequiredSecurityTransitions(t *testing.T) {
 		require.NotContains(t, script, forbidden)
 	}
 	require.Less(t, strings.Index(script, "test \"$(node --version)\""), strings.Index(script, "dseditgroup -o edit -d lume"))
+}
+
+func TestRegisteredGiteaHostnameAcceptsOnlySafeHostnamesAndIPs(t *testing.T) {
+	hostname, isIP, err := registeredGiteaHostname("https://Git.Internal.Example./owner/repo")
+	require.NoError(t, err)
+	require.Equal(t, "git.internal.example", hostname)
+	require.False(t, isIP)
+
+	hostname, isIP, err = registeredGiteaHostname("https://100.85.243.16:3000")
+	require.NoError(t, err)
+	require.Equal(t, "100.85.243.16", hostname)
+	require.True(t, isIP)
+
+	_, _, err = registeredGiteaHostname("https://bad'host.example")
+	require.ErrorContains(t, err, "invalid DNS hostname")
 }
 
 func TestParseBootstrapVerificationValidatesGuestPublicKey(t *testing.T) {

@@ -39,6 +39,12 @@ bootstrap creates a hidden maintenance administrator with a random discarded
 password. SSH remains restricted to the non-administrator workflow user, and
 the controller retains no reusable administrator credential.
 
+Bootstrap proves that the fresh guest can resolve the registered Gitea
+hostname. If host-only split DNS prevents resolution, bootstrap resolves that
+single hostname on the controller and installs the validated address mapping in
+the image. It does not copy DNS configuration, registration credentials, or a
+general host resolver into the guest.
+
 Bootstrap accepts Lume's documented temporary unattended username and password
 only for initial provisioning. Credentials supplied by flag are treated as
 observable and documentation prefers an owner-only password file. A failed

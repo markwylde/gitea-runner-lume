@@ -10,8 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -30,6 +33,8 @@ const (
 	bootstrapNodeVersion = "24.19.0"
 	bootstrapNodeSHA256  = "8294b7aa9b03997481c06babf1e8b270c859358f27da57a11509afe537ac381d"
 )
+
+var bootstrapHostnamePattern = regexp.MustCompile(`(?i)^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 
 type imageBootstrapOptions struct {
 	profile      string
@@ -175,10 +180,14 @@ func bootstrapImage(ctx context.Context, output io.Writer, cfg *config.Config, p
 	if err != nil {
 		return err
 	}
+	giteaHostname, guestHostEntry, err := resolveGuestGiteaHost(ctx, cfg, keyClient, passwordClient)
+	if err != nil {
+		return err
+	}
 
 	// A rerun after hardening cannot use the removed password, so prove the
 	// installed controller key first and only run mutation when it is absent.
-	_, keyErr := keyClient.Run(ctx, bootstrapVerificationCommand(ver.Version()), nil)
+	_, keyErr := keyClient.Run(ctx, bootstrapVerificationCommand(ver.Version(), giteaHostname), nil)
 	if presented := keyClient.HostKey(); pinnedHostKey != nil && (presented == nil || !bytes.Equal(pinnedHostKey.Marshal(), presented.Marshal())) {
 		return errors.New("guest SSH host key does not match the pinned base image identity")
 	}
@@ -190,7 +199,13 @@ func bootstrapImage(ctx context.Context, output io.Writer, cfg *config.Config, p
 		if _, err := passwordClient.Run(ctx, "umask 077; cat > /tmp/gitea-runner-lume.host.pub", hostPublicKey); err != nil {
 			return err
 		}
-		if _, err := passwordClient.Run(ctx, "umask 077; cat > /tmp/gitea-runner-lume.bootstrap.sh", []byte(bootstrapScript(ver.Version()))); err != nil {
+		if len(guestHostEntry) > 0 {
+			fmt.Fprintf(output, "installing guest resolution for %s\n", giteaHostname)
+			if _, err := passwordClient.Run(ctx, "umask 077; cat > /tmp/gitea-runner-lume.hosts", guestHostEntry); err != nil {
+				return err
+			}
+		}
+		if _, err := passwordClient.Run(ctx, "umask 077; cat > /tmp/gitea-runner-lume.bootstrap.sh", []byte(bootstrapScript(ver.Version(), giteaHostname))); err != nil {
 			return err
 		}
 		fmt.Fprintln(output, "installing Command Line Tools and verified Node runtime; this can take several minutes")
@@ -225,7 +240,7 @@ func bootstrapImage(ctx context.Context, output io.Writer, cfg *config.Config, p
 		}
 	}
 
-	verification, err := keyClient.Run(ctx, bootstrapVerificationCommand(ver.Version()), nil)
+	verification, err := keyClient.Run(ctx, bootstrapVerificationCommand(ver.Version(), giteaHostname), nil)
 	if err != nil {
 		return fmt.Errorf("verify key-only guest bootstrap: %w", err)
 	}
@@ -352,17 +367,18 @@ func writePublicIdentity(path string, content []byte) error {
 	return writeNewFile(path, content, 0o644)
 }
 
-func bootstrapVerificationCommand(version string) string {
+func bootstrapVerificationCommand(version, giteaHostname string) string {
 	return "set -eu; export PATH='/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'; " +
 		"test \"$(id -u)\" -gt 0; " +
 		"if id -Gn | tr ' ' '\\n' | grep -qx admin; then echo 'runner user is still an administrator' >&2; exit 1; fi; " +
 		"test \"$(/usr/local/bin/gitea-runner-lume version)\" = 'gitea-runner-lume " + version + "'; " +
 		"test \"$(node --version)\" = 'v" + bootstrapNodeVersion + "'; " +
 		"xcrun --find git >/dev/null; " +
+		guestResolutionCommand(giteaHostname) + "; " +
 		"printf 'GRL_BOOTSTRAP_OK\\n'; cat /etc/gitea-runner-lume/guest.key.pub; node --version; git --version"
 }
 
-func bootstrapScript(version string) string {
+func bootstrapScript(version, giteaHostname string) string {
 	return `set -euo pipefail
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 echo 'bootstrap: installing guest agent and identities'
@@ -420,6 +436,13 @@ for tool in node npm npx corepack; do
 done
 test "$(node --version)" = "v${node_version}"
 
+if [ -f /tmp/gitea-runner-lume.hosts ]; then
+  echo 'bootstrap: installing scoped Gitea hostname resolution'
+  grep -Fqx "$(cat /tmp/gitea-runner-lume.hosts)" /etc/hosts || cat /tmp/gitea-runner-lume.hosts >> /etc/hosts
+fi
+dscacheutil -flushcache
+` + guestResolutionCommand(giteaHostname) + `
+
 if ! id grl-maintenance >/dev/null 2>&1; then
   maintenance_password="$(openssl rand -base64 48)"
   sysadminctl -addUser grl-maintenance -fullName 'Gitea Runner Maintenance' -password "$maintenance_password" -admin
@@ -448,10 +471,74 @@ defaults delete /Library/Preferences/com.apple.loginwindow autoLoginUser >/dev/n
 rm -f /etc/kcpassword
 dscl . -delete /Users/lume dsAttrTypeNative:ShadowHashData >/dev/null 2>&1 || true
 dscl . -delete /Users/lume AuthenticationAuthority >/dev/null 2>&1 || true
-rm -f /tmp/gitea-runner-lume.bootstrap /tmp/gitea-runner-lume.host.pub
+rm -f /tmp/gitea-runner-lume.bootstrap /tmp/gitea-runner-lume.host.pub /tmp/gitea-runner-lume.hosts
 rm -f /tmp/gitea-runner-lume.bootstrap.sh
 sync
 echo 'GRL_ROOT_BOOTSTRAP_OK'
 (sleep 5; /sbin/shutdown -h now) >/dev/null 2>&1 &
 `
+}
+
+func resolveGuestGiteaHost(ctx context.Context, cfg *config.Config, clients ...*guestbootstrap.Client) (string, []byte, error) {
+	registration, err := config.LoadRegistration(cfg.Runner.File)
+	if err != nil {
+		return "", nil, fmt.Errorf("load runner registration for guest networking: %w", err)
+	}
+	hostname, isIP, err := registeredGiteaHostname(registration.Address)
+	if err != nil {
+		return "", nil, err
+	}
+	if isIP {
+		return hostname, nil, nil
+	}
+	probe := guestResolutionCommand(hostname)
+	for _, client := range clients {
+		if _, probeErr := client.Run(ctx, probe, nil); probeErr == nil {
+			return hostname, nil, nil
+		}
+	}
+	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolve registered Gitea hostname on controller: %w", err)
+	}
+	var selected net.IP
+	for _, address := range addresses {
+		ip := address.IP
+		if ip.IsUnspecified() || ip.IsLoopback() || ip.IsMulticast() {
+			continue
+		}
+		if ip.To4() != nil {
+			selected = ip.To4()
+			break
+		}
+		if selected == nil {
+			selected = ip
+		}
+	}
+	if selected == nil {
+		return "", nil, errors.New("registered Gitea hostname has no usable controller address")
+	}
+	return hostname, []byte(selected.String() + " " + hostname + "\n"), nil
+}
+
+func registeredGiteaHostname(address string) (string, bool, error) {
+	instance, err := url.Parse(address)
+	if err != nil {
+		return "", false, fmt.Errorf("parse registered Gitea address: %w", err)
+	}
+	hostname := strings.ToLower(strings.TrimSuffix(instance.Hostname(), "."))
+	if ip := net.ParseIP(hostname); ip != nil {
+		return ip.String(), true, nil
+	}
+	if len(hostname) > 253 || !bootstrapHostnamePattern.MatchString(hostname) {
+		return "", false, errors.New("registered Gitea address has an invalid DNS hostname")
+	}
+	return hostname, false, nil
+}
+
+func guestResolutionCommand(hostname string) string {
+	if net.ParseIP(hostname) != nil {
+		return "true"
+	}
+	return "dscacheutil -q host -a name '" + hostname + "' | grep -q 'ip_address:'"
 }

@@ -75,6 +75,22 @@ func TestResolveExecutableUsesRequestedAbsolutePath(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestGuestExecutionPathPreservesRequestedEntriesAndAddsImageTools(t *testing.T) {
+	requested := "/opt/action/bin:/usr/bin"
+	actual := guestExecutionPath(requested)
+	require.Equal(t, []string{
+		"/opt/action/bin", "/usr/bin", "/usr/local/bin", "/bin", "/usr/sbin", "/sbin",
+	}, filepath.SplitList(actual))
+	require.Equal(t, 1, strings.Count(actual, "/usr/bin"))
+}
+
+func TestGuestExecutionPathSuppliesToolsWhenRequestOmitsPath(t *testing.T) {
+	require.Equal(t,
+		[]string{"/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"},
+		filepath.SplitList(guestExecutionPath("")),
+	)
+}
+
 func TestServerRejectsPathEscapeBeforeWriting(t *testing.T) {
 	root := t.TempDir()
 	var input, output bytes.Buffer
