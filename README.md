@@ -123,12 +123,16 @@ go vet ./...
 
 ## Releases
 
-Push a semantic version tag to build a signed and notarized Apple Silicon
-archive, checksum, SBOM, and GitHub Release:
+Run the GitHub Actions `Trigger Release` workflow from `main` to build a signed
+and notarized Apple Silicon archive, checksum, SBOM, and GitHub Release. The
+workflow derives the next semantic version from conventional commits and
+creates the tag after its release checks pass; directly pushing a tag does not
+publish a release.
 
 ```sh
-git tag -a v0.1.0 -m "v0.1.0"
-git push origin v0.1.0
+gh workflow run release.yml \
+  --repo markwylde/gitea-runner-lume \
+  --ref main
 ```
 
 The repository must define `APPLE_ID` and `APPLE_TEAM_ID` variables plus

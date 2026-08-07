@@ -24,6 +24,13 @@ published with checksums, SBOM, provenance, license notices, configuration
 migration notes, supported Gitea/Lume/macOS matrix, and pinned base-image agent
 version. Builds use a pinned Go toolchain and locked modules.
 
+An operator starts a release from the GitHub Actions `Trigger Release` workflow.
+The workflow derives the next semantic version from conventional commits since
+the latest version tag, runs release checks against the exact `main` commit, and
+then creates the version tag. It builds, signs, notarizes, verifies, and
+publishes only that tagged commit. A directly pushed tag does not publish a
+release.
+
 Upgrades drain work before replacing the daemon. Schema migration is explicit,
 backed up, and reversible. A host binary refuses incompatible guest agents and
 base-image manifests.

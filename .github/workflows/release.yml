@@ -1,9 +1,7 @@
-name: release
+name: Trigger Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -21,7 +19,7 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 45
     steps:
-      - name: Check out tagged source
+      - name: Check out release source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
@@ -33,20 +31,90 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Verify immutable semantic-version tag
+      - name: Resolve next release version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          test "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" = "$(git rev-parse HEAD)"
+          echo "RELEASE_NEEDED=false" >> "$GITHUB_ENV"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
           test -z "$(git status --porcelain)"
 
+          latest_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | head -n 1)"
+          range=HEAD
+          current_version=0.0.0
+          if [ -n "$latest_tag" ]; then
+            [[ "$latest_tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]
+            current_version="${latest_tag#v}"
+            range="$latest_tag..HEAD"
+          fi
+
+          subjects="$RUNNER_TEMP/release-subjects"
+          bodies="$RUNNER_TEMP/release-bodies"
+          git log "$range" --format='%s' > "$subjects"
+          git log "$range" --format='%B' > "$bodies"
+          if [ ! -s "$subjects" ]; then
+            echo "No release needed: no commits since ${latest_tag:-repository creation}."
+            exit 0
+          fi
+
+          release_type=patch
+          if grep -Eq '^[a-zA-Z]+(\([^)]+\))?!:' "$subjects" || grep -q '^BREAKING CHANGE:' "$bodies"; then
+            release_type=major
+          elif grep -Eq '^feat(\([^)]+\))?:' "$subjects"; then
+            release_type=minor
+          fi
+
+          IFS=. read -r major minor patch <<< "$current_version"
+          case "$release_type" in
+            major) RELEASE_TAG="v$((major + 1)).0.0" ;;
+            minor) RELEASE_TAG="v${major}.$((minor + 1)).0" ;;
+            patch) RELEASE_TAG="v${major}.${minor}.$((patch + 1))" ;;
+          esac
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "GORELEASER_CURRENT_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "RELEASE_NEEDED=true" >> "$GITHUB_ENV"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Tag already exists: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          if gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            echo "Release already exists: $RELEASE_TAG" >&2
+            exit 1
+          fi
+
       - name: Verify release
+        if: env.RELEASE_NEEDED == 'true'
         run: |
           go test ./internal/...
           go test -race ./internal/pkg/lume ./internal/pkg/guestagent ./internal/app/run ./internal/app/cmd
           go vet ./...
           ./scripts/codesign-release-binary_test.sh
 
+      - name: Create immutable release tag
+        if: env.RELEASE_NEEDED == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          source_commit="$(git rev-parse HEAD)"
+          tag_object="$(gh api --method POST "repos/$GH_REPO/git/tags" \
+            -f tag="$RELEASE_TAG" \
+            -f message="$RELEASE_TAG" \
+            -f object="$source_commit" \
+            -f type=commit \
+            --jq .sha)"
+          [[ "$tag_object" =~ ^[0-9a-f]{40}$ ]]
+          gh api --method POST "repos/$GH_REPO/git/refs" \
+            -f ref="refs/tags/$RELEASE_TAG" \
+            -f sha="$tag_object" >/dev/null
+          git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$source_commit"
+
       - name: Check Apple release credentials
+        if: env.RELEASE_NEEDED == 'true'
         env:
           MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -66,17 +134,20 @@ jobs:
           fi
 
       - name: Import Apple signing certificate
+        if: env.RELEASE_NEEDED == 'true'
         uses: apple-actions/import-codesign-certs@63fff01cd422d4b7b855d40ca1e9d34d2de9427d # v3
         with:
           p12-file-base64: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           p12-password: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
 
       - name: Install Syft for SBOM generation
+        if: env.RELEASE_NEEDED == 'true'
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           syft-version: v1.48.0
 
       - name: Select Developer ID identity
+        if: env.RELEASE_NEEDED == 'true'
         env:
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
@@ -88,6 +159,7 @@ jobs:
           echo "MACOS_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
 
       - name: Build signed release assets
+        if: env.RELEASE_NEEDED == 'true'
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
           distribution: goreleaser
@@ -97,6 +169,7 @@ jobs:
           RELEASE_REQUIRE_SIGNING: "1"
 
       - name: Notarize and verify exact release payload
+        if: env.RELEASE_NEEDED == 'true'
         env:
           APPLE_ID: ${{ vars.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
@@ -134,6 +207,7 @@ jobs:
           (cd dist && shasum -a 256 -c checksums.txt)
 
       - name: Publish immutable GitHub Release
+        if: env.RELEASE_NEEDED == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -145,9 +219,9 @@ jobs:
           test "${#sboms[@]}" -ge 1
           test -f dist/checksums.txt
           test -f dist/notarization.json
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "$RELEASE_TAG" \
             "${archives[@]}" "${sboms[@]}" dist/checksums.txt dist/notarization.json \
             --repo "$GH_REPO" \
             --verify-tag \
             --generate-notes \
-            --title "$GITHUB_REF_NAME"
+            --title "$RELEASE_TAG"
