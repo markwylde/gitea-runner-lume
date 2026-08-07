@@ -43,6 +43,9 @@ Unless `--no-register` is passed, `init` also performs ordinary Gitea runner
 registration. Missing instance, token, and runner-name values are prompted for;
 token entry is not echoed on an interactive terminal. Flags and an owner-only
 token file support unattended setup. An existing valid registration is kept.
+After registration, `init` states that the runner is expected to remain offline
+until the base image is bootstrapped, adopted, validated, and the service is
+installed. Registration alone never starts a partially configured daemon.
 
 `image create` reports elapsed time while Lume is working. When Lume publishes
 structured provisioning operation or download percentage fields, the command
