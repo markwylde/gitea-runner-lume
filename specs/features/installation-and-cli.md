@@ -34,6 +34,11 @@ Releases provide a notarized arm64 macOS archive containing one runner binary,
 license notices for upstream and downstream code, shell completions, and
 checksums. Lume is the only host runtime dependency.
 
+Operator documentation installs a versioned release archive and verifies its
+published SHA-256 checksum before extracting or executing the binary. Cloning
+the repository and building with Go is a contributor workflow, not the primary
+operator installation path.
+
 Service installation creates a user-owned LaunchAgent and does not place
 registration secrets in the plist. `doctor` validates architecture, macOS,
 Lume, storage, base images, registration file permissions, Gitea connectivity,
