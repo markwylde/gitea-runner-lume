@@ -15,10 +15,12 @@ gitea-runner-lume init
 The command discovers the exact `lume --version`, generates a random
 installation identity, creates one `xcode-16:lume://xcode-16` profile, and
 creates separate controller SSH and image-signing identities. It preserves
-valid existing configuration and keys when run again. Edit the profile
-resources and paths before continuing. The default Lume storage is named
-`home` at `$HOME/.lume`; pass `--storage` and `--storage-path` when using a
-different registered storage.
+valid existing configuration, keys, and runner registration when run again.
+It prompts for the Gitea instance, registration token, and runner name; token
+input is hidden. Edit the profile resources and paths before continuing. The
+default Lume storage is named `home` at `$HOME/.lume`; pass `--storage` and
+`--storage-path` when using a different registered storage, or `--no-register`
+to defer registration.
 
 Keep `image-signing.key` offline except while adopting an image. It is never
 installed in a guest or service plist.
@@ -102,8 +104,9 @@ and worker startup require the same values.
 
 ## 4. Register Normally
 
-Create an instance, organization, or repository registration token in Gitea,
-then use the same flow as the official runner:
+This step is already complete unless `init --no-register` was used. To register
+later, create an instance, organization, or repository registration token in
+Gitea, then use the same flow as the official runner:
 
 ```sh
 printf '%s' 'REGISTRATION_TOKEN' > /tmp/gitea-runner-token

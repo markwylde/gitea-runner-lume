@@ -42,8 +42,9 @@ gitea-runner-lume init
 ```
 
 This creates the default configuration, controller keys, and image-signing
-keys under `~/.config/gitea-runner-lume`. Pass `--config PATH` to use another
-configuration file.
+keys under `~/.config/gitea-runner-lume`, then prompts for the Gitea instance,
+runner registration token, and runner name. Pass `--config PATH` to use another
+configuration file or `--no-register` to initialize local files only.
 
 ## Create the base VM
 
@@ -73,8 +74,9 @@ gitea-runner-lume image validate --profile xcode-16
 
 ## Register and run
 
-Create a runner registration token in Gitea at instance, organization, or
-repository scope:
+`init` registers the runner by default. If setup used `--no-register`, create a
+runner registration token in Gitea at instance, organization, or repository
+scope and run:
 
 ```sh
 printf '%s' 'REGISTRATION_TOKEN' > /tmp/gitea-runner-token

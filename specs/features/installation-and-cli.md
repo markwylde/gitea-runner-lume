@@ -39,6 +39,10 @@ configuration when absent, secure controller and image-signing Ed25519 key
 pairs, and the image-manifest directory. Repeated execution preserves valid
 configuration and keys. Partial, unsafe, or mismatched key pairs fail closed;
 the command never creates the guest-only private key on the controller.
+Unless `--no-register` is passed, `init` also performs ordinary Gitea runner
+registration. Missing instance, token, and runner-name values are prompted for;
+token entry is not echoed on an interactive terminal. Flags and an owner-only
+token file support unattended setup. An existing valid registration is kept.
 
 `image create` reports elapsed time while Lume is working. When Lume publishes
 structured provisioning operation or download percentage fields, the command

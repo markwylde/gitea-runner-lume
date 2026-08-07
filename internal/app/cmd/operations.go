@@ -292,6 +292,9 @@ func loadImageCmd(ctx context.Context, configFile *string) *cobra.Command {
 		if !ok {
 			return fmt.Errorf("unknown Lume profile %q", adoptProfile)
 		}
+		if err := requireGuestBootstrap(cfg); err != nil {
+			return err
+		}
 		provider, err := lume.NewProvider(cfg.Lume.Executable, cfg.Lume.Storage, profile.CleanupTimeout, nil)
 		if err != nil {
 			return err
@@ -451,6 +454,9 @@ func attestBaseImage(ctx context.Context, cfg *config.Config, profile config.Lum
 }
 
 func validateImages(ctx context.Context, command *cobra.Command, cfg *config.Config, selected string) error {
+	if err := requireGuestBootstrap(cfg); err != nil {
+		return err
+	}
 	guestKey, err := guestagent.LoadEd25519PublicKey(cfg.Lume.GuestPublicKeyFile)
 	if err != nil {
 		return err
@@ -488,6 +494,20 @@ func validateImages(ctx context.Context, command *cobra.Command, cfg *config.Con
 	}
 	if !matched {
 		return fmt.Errorf("unknown Lume profile %q", selected)
+	}
+	return nil
+}
+
+func requireGuestBootstrap(cfg *config.Config) error {
+	for description, path := range map[string]string{
+		"guest public key":    cfg.Lume.GuestPublicKeyFile,
+		"pinned SSH host key": cfg.Lume.KnownHostsFile,
+	} {
+		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("guest bootstrap incomplete: %s is missing at %s; complete docs/lume-setup.md before image adopt", description, path)
+		} else if err != nil {
+			return fmt.Errorf("inspect %s: %w", description, err)
+		}
 	}
 	return nil
 }

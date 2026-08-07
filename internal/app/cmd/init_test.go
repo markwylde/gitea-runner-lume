@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"os"
 	"path/filepath"
@@ -26,7 +27,7 @@ func TestInitCreatesDefaultConfigurationAndKeysIdempotently(t *testing.T) {
 		var output bytes.Buffer
 		command.SetOut(&output)
 		command.SetErr(&output)
-		command.SetArgs([]string{"init"})
+		command.SetArgs([]string{"init", "--no-register"})
 		require.NoError(t, command.Execute())
 		return output.String()
 	}
@@ -61,6 +62,23 @@ func TestInitCreatesDefaultConfigurationAndKeysIdempotently(t *testing.T) {
 	require.Equal(t, privateBefore, privateAfter)
 }
 
+func TestRegistrationTokenPromptAndNonInteractiveSources(t *testing.T) {
+	command := NewRootCommand(t.Context())
+	var output bytes.Buffer
+	command.SetErr(&output)
+	command.SetIn(bytes.NewBufferString(" prompted-token \n"))
+	token, err := registrationToken(command, bufio.NewReader(command.InOrStdin()), &registerArgs{})
+	require.NoError(t, err)
+	require.Equal(t, "prompted-token", token)
+	require.Contains(t, output.String(), "Runner registration token")
+
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	require.NoError(t, os.WriteFile(tokenFile, []byte(" file-token \n"), 0o600))
+	token, err = registrationToken(command, bufio.NewReader(command.InOrStdin()), &registerArgs{TokenFile: tokenFile})
+	require.NoError(t, err)
+	require.Equal(t, "file-token", token)
+}
+
 func TestInitRefusesIncompleteExistingKeyPair(t *testing.T) {
 	home := t.TempDir()
 	bin := t.TempDir()
@@ -72,7 +90,7 @@ func TestInitRefusesIncompleteExistingKeyPair(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "host.key"), []byte("partial"), 0o600))
 
 	command := NewRootCommand(t.Context())
-	command.SetArgs([]string{"init"})
+	command.SetArgs([]string{"init", "--no-register"})
 	err := command.Execute()
 	require.ErrorContains(t, err, "key pair is incomplete")
 }
@@ -81,9 +99,34 @@ func TestInitRefusesInsecureExistingConfigurationDirectory(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "config")
 	require.NoError(t, os.Mkdir(dir, 0o755))
 	command := NewRootCommand(t.Context())
-	command.SetArgs([]string{"--config", filepath.Join(dir, "config.yaml"), "init"})
+	command.SetArgs([]string{"--config", filepath.Join(dir, "config.yaml"), "init", "--no-register"})
 	err := command.Execute()
 	require.ErrorContains(t, err, "accessible only by its owner")
+}
+
+func TestInitMigratesRelativeRunnerRegistrationPath(t *testing.T) {
+	home := t.TempDir()
+	bin := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", bin)
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "lume"), []byte("#!/bin/sh\nprintf '0.5.1\\n'\n"), 0o700))
+	configFile := filepath.Join(home, ".config", "gitea-runner-lume", "config.yaml")
+	content, err := generateLumeStarter("xcode-16", "grl-xcode-16", "home", filepath.Join(home, ".lume"), filepath.Dir(configFile))
+	require.NoError(t, err)
+	content = bytes.Replace(content, []byte("  file: \""+filepath.Join(filepath.Dir(configFile), ".runner")+"\"\n"), nil, 1)
+	require.NoError(t, os.MkdirAll(filepath.Dir(configFile), 0o700))
+	require.NoError(t, os.WriteFile(configFile, content, 0o600))
+
+	command := NewRootCommand(t.Context())
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetArgs([]string{"init", "--no-register"})
+	require.NoError(t, command.Execute())
+	require.Contains(t, output.String(), "set runner registration path")
+
+	value, err := os.ReadFile(configFile)
+	require.NoError(t, err)
+	require.Contains(t, string(value), filepath.Join(filepath.Dir(configFile), ".runner"))
 }
 
 func mustLoadPrivateKey(t *testing.T, path string) []byte {

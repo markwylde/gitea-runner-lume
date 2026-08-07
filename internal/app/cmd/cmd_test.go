@@ -44,7 +44,7 @@ func TestRootHelpExposesCompleteSafeCommandSurface(t *testing.T) {
 func TestRootPublicFlagsAndSubcommands(t *testing.T) {
 	command := NewRootCommand(context.Background())
 	tests := map[string][]string{
-		"init":           {"image", "profile", "storage", "storage-path"},
+		"init":           {"image", "instance", "name", "no-register", "profile", "storage", "storage-path", "token", "token-file"},
 		"register":       {"ephemeral", "instance", "labels", "name", "no-interactive", "token", "token-file"},
 		"daemon":         {"labels", "once"},
 		"status":         {"json"},
