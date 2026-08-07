@@ -75,6 +75,7 @@ jobs:
             echo "RELEASE_TAG=$RELEASE_TAG"
             echo "GORELEASER_CURRENT_TAG=$RELEASE_TAG"
             echo "RELEASE_NEEDED=true"
+            echo "RELEASE_NOTES_PATH=$RUNNER_TEMP/RELEASE.md"
           } >> "$GITHUB_ENV"
 
           if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
@@ -143,8 +144,8 @@ jobs:
           gh api --method POST "repos/$GH_REPO/releases/generate-notes" \
             -f tag_name="$RELEASE_TAG" \
             -f target_commitish="$(git rev-parse HEAD)" \
-            --jq .body > RELEASE.md
-          test -s RELEASE.md
+            --jq .body > "$RELEASE_NOTES_PATH"
+          test -s "$RELEASE_NOTES_PATH"
 
       - name: Check Apple release credentials
         if: env.RELEASE_NEEDED == 'true'
@@ -251,9 +252,10 @@ jobs:
           test "${#sboms[@]}" -ge 1
           test -f dist/checksums.txt
           test -f dist/notarization.json
+          test -s "$RELEASE_NOTES_PATH"
           gh release create "$RELEASE_TAG" \
             "${archives[@]}" "${sboms[@]}" dist/checksums.txt dist/notarization.json \
             --repo "$GH_REPO" \
             --verify-tag \
-            --notes-file RELEASE.md \
+            --notes-file "$RELEASE_NOTES_PATH" \
             --title "$RELEASE_TAG"

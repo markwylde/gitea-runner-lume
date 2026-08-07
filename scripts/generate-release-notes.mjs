@@ -5,6 +5,7 @@ import { promisify } from 'node:util'
 const execFileAsync = promisify(execFile)
 const tag = process.argv[2]
 const apiKey = process.env.OPENROUTER_API_KEY
+const outputPath = process.env.RELEASE_NOTES_PATH ?? 'RELEASE.md'
 
 if (!tag || !/^v\d+\.\d+\.\d+$/.test(tag)) {
   throw new Error('A semantic release tag is required')
@@ -77,4 +78,4 @@ const notes = payload?.choices?.[0]?.message?.content?.trim()
 if (!notes || notes.length > 64 * 1024 || notes.startsWith('```')) {
   throw new Error('OpenRouter returned invalid release notes')
 }
-await writeFile('RELEASE.md', `${notes}\n`, { flag: 'wx', mode: 0o600 })
+await writeFile(outputPath, `${notes}\n`, { flag: 'wx', mode: 0o600 })
