@@ -258,7 +258,7 @@ func loadImageCmd(ctx context.Context, configFile *string) *cobra.Command {
 			return err
 		}
 		createDone := make(chan struct{})
-		go reportImageCreateProgress(ctx, command.ErrOrStderr(), profile.Image, createDone)
+		go reportImageCreateProgress(ctx, command.ErrOrStderr(), provider, profile.Image, createDone)
 		if err := provider.Create(ctx, profile.Image, ipsw, unattended, profile.CPU, profile.MemoryGB, profile.DiskGB); err != nil {
 			close(createDone)
 			return err
@@ -352,9 +352,13 @@ func loadImageCmd(ctx context.Context, configFile *string) *cobra.Command {
 	return imageCmd
 }
 
-func reportImageCreateProgress(ctx context.Context, output io.Writer, image string, done <-chan struct{}) {
+type imageProgressProvider interface {
+	Get(context.Context, string) (lume.VM, error)
+}
+
+func reportImageCreateProgress(ctx context.Context, output io.Writer, provider imageProgressProvider, image string, done <-chan struct{}) {
 	started := time.Now()
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	fmt.Fprintf(output, "creating base VM %s; macOS installation can take several minutes\n", image)
 	for {
@@ -364,9 +368,27 @@ func reportImageCreateProgress(ctx context.Context, output io.Writer, image stri
 		case <-done:
 			return
 		case <-ticker.C:
-			fmt.Fprintf(output, "still creating base VM %s (%s elapsed)\n", image, time.Since(started).Round(time.Second))
+			elapsed := time.Since(started).Round(time.Second)
+			pollContext, cancel := context.WithTimeout(ctx, 5*time.Second)
+			vm, err := provider.Get(pollContext, image)
+			cancel()
+			fmt.Fprintln(output, formatImageCreateProgress(image, elapsed, vm, err))
 		}
 	}
+}
+
+func formatImageCreateProgress(image string, elapsed time.Duration, vm lume.VM, pollErr error) string {
+	prefix := fmt.Sprintf("creating base VM %s", image)
+	if pollErr != nil {
+		return fmt.Sprintf("%s (%s elapsed; waiting for Lume progress)", prefix, elapsed)
+	}
+	if vm.DownloadProgress != nil {
+		return fmt.Sprintf("%s: downloading %.0f%% (%s elapsed)", prefix, *vm.DownloadProgress, elapsed)
+	}
+	if vm.ProvisioningOperation != "" {
+		return fmt.Sprintf("%s: %s (%s elapsed)", prefix, vm.ProvisioningOperation, elapsed)
+	}
+	return fmt.Sprintf("%s: %s (%s elapsed)", prefix, vm.State, elapsed)
 }
 
 func attestBaseImage(ctx context.Context, cfg *config.Config, profile config.LumeProfile, expectedAttestation guestproto.Hello) (guestproto.Hello, error) {

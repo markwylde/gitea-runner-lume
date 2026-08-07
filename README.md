@@ -38,26 +38,17 @@ lume --version
 ## Configure
 
 ```sh
-CONFIG="$HOME/.config/gitea-runner-lume/config.yaml"
-gitea-runner-lume config init --lume --config "$CONFIG"
+gitea-runner-lume init
 ```
 
-Create the controller and image-signing keys:
-
-```sh
-install -d -m 700 "$HOME/.config/gitea-runner-lume/images"
-ssh-keygen -q -t ed25519 -N '' -f "$HOME/.config/gitea-runner-lume/host.key"
-ssh-keygen -q -t ed25519 -N '' -f "$HOME/.config/gitea-runner-lume/image-signing.key"
-cp "$HOME/.config/gitea-runner-lume/image-signing.key.pub" \
-  "$HOME/.config/gitea-runner-lume/image-signing.pub"
-chmod 600 "$HOME/.config/gitea-runner-lume/host.key" \
-  "$HOME/.config/gitea-runner-lume/image-signing.key"
-```
+This creates the default configuration, controller keys, and image-signing
+keys under `~/.config/gitea-runner-lume`. Pass `--config PATH` to use another
+configuration file.
 
 ## Create the base VM
 
 ```sh
-gitea-runner-lume --config "$CONFIG" image create \
+gitea-runner-lume image create \
   --profile xcode-16 --ipsw latest --unattended tahoe
 ```
 
@@ -74,10 +65,10 @@ Inside the VM:
 Adopt and validate the image:
 
 ```sh
-gitea-runner-lume --config "$CONFIG" image adopt \
+gitea-runner-lume image adopt \
   --profile xcode-16 \
   --signing-key-file "$HOME/.config/gitea-runner-lume/image-signing.key"
-gitea-runner-lume --config "$CONFIG" image validate --profile xcode-16
+gitea-runner-lume image validate --profile xcode-16
 ```
 
 ## Register and run
@@ -89,15 +80,15 @@ repository scope:
 printf '%s' 'REGISTRATION_TOKEN' > /tmp/gitea-runner-token
 chmod 600 /tmp/gitea-runner-token
 
-gitea-runner-lume --config "$CONFIG" register \
+gitea-runner-lume register \
   --no-interactive \
   --instance https://gitea.example.com \
   --token-file /tmp/gitea-runner-token \
   --name "$(scutil --get LocalHostName)-lume" \
   --labels xcode-16:lume://xcode-16
 
-gitea-runner-lume --config "$CONFIG" doctor
-gitea-runner-lume --config "$CONFIG" service install
+gitea-runner-lume doctor
+gitea-runner-lume service install
 ```
 
 Use the label in a Gitea workflow:

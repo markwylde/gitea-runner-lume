@@ -30,8 +30,8 @@ func NewRootCommand(ctx context.Context) *cobra.Command {
 		SilenceUsage: true,
 	}
 	rootCmd.SetVersionTemplate("gitea-runner-lume {{.Version}}\n")
-	configFile := ""
-	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "Config file path. `config` subcommands fall back to config.yaml in the working directory or next to the executable")
+	configFile := defaultConfigFilePath()
+	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", configFile, "Config file path")
 
 	// ./gitea-runner register
 	var regArgs registerArgs
@@ -70,6 +70,7 @@ func NewRootCommand(ctx context.Context) *cobra.Command {
 
 	// ./gitea-runner config
 	rootCmd.AddCommand(loadConfigCmd(&configFile))
+	rootCmd.AddCommand(loadInitCmd(&configFile))
 
 	// ./gitea-runner generate-config
 	generateConfigCmd := loadGenerateConfigCmd("generate-config")
