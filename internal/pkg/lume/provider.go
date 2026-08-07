@@ -35,11 +35,13 @@ const (
 )
 
 type VM struct {
-	ID        string  `json:"id"`
-	Name      string  `json:"name"`
-	State     VMState `json:"state"`
-	Storage   string  `json:"storage"`
-	IPAddress string  `json:"ip_address,omitempty"`
+	ID                    string   `json:"id"`
+	Name                  string   `json:"name"`
+	State                 VMState  `json:"state"`
+	Storage               string   `json:"storage"`
+	IPAddress             string   `json:"ip_address,omitempty"`
+	ProvisioningOperation string   `json:"provisioning_operation,omitempty"`
+	DownloadProgress      *float64 `json:"download_progress,omitempty"`
 }
 
 type lumeDiskSize struct {
@@ -278,6 +280,12 @@ func validateVM(vm VM) error {
 			return errors.New("VM IP address is invalid")
 		}
 	}
+	if len(vm.ProvisioningOperation) > 128 || strings.ContainsAny(vm.ProvisioningOperation, "\r\n\x00") {
+		return errors.New("VM provisioning operation is invalid")
+	}
+	if vm.DownloadProgress != nil && (*vm.DownloadProgress < 0 || *vm.DownloadProgress > 100) {
+		return errors.New("VM download progress is invalid")
+	}
 	return nil
 }
 
@@ -290,7 +298,14 @@ func convertVM(details lumeVMDetails) (VM, error) {
 	if details.IPAddress != nil {
 		ip = *details.IPAddress
 	}
-	vm := VM{ID: details.Name, Name: details.Name, State: state, Storage: details.LocationName, IPAddress: ip}
+	operation := ""
+	if details.ProvisioningOperation != nil {
+		operation = *details.ProvisioningOperation
+	}
+	vm := VM{
+		ID: details.Name, Name: details.Name, State: state, Storage: details.LocationName,
+		IPAddress: ip, ProvisioningOperation: operation, DownloadProgress: details.DownloadProgress,
+	}
 	if err := validateVM(vm); err != nil {
 		return VM{}, err
 	}

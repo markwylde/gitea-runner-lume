@@ -25,7 +25,7 @@ func TestRootHelpExposesCompleteSafeCommandSurface(t *testing.T) {
 	require.Contains(t, help, "Gitea Runner with disposable Lume macOS workers")
 	for _, name := range []string{
 		"bug-report", "cache-server", "cleanup", "config", "daemon", "doctor",
-		"exec", "image", "register", "service",
+		"exec", "image", "init", "register", "service",
 		"status", "version",
 	} {
 		require.Contains(t, help, "  "+name+" ", name)
@@ -44,6 +44,7 @@ func TestRootHelpExposesCompleteSafeCommandSurface(t *testing.T) {
 func TestRootPublicFlagsAndSubcommands(t *testing.T) {
 	command := NewRootCommand(context.Background())
 	tests := map[string][]string{
+		"init":           {"image", "instance", "name", "no-register", "profile", "storage", "storage-path", "token", "token-file"},
 		"register":       {"ephemeral", "instance", "labels", "name", "no-interactive", "token", "token-file"},
 		"daemon":         {"labels", "once"},
 		"status":         {"json"},

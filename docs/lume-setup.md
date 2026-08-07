@@ -4,46 +4,34 @@ This is the development setup path. It uses ordinary Gitea runner registration:
 an instance URL, a runner registration token, a name, and labels. It does not
 use an API token, webhook, repository, or organization setting.
 
-## 1. Create Configuration
+## 1. Initialize the Controller
 
 Install the reviewed Lume 0.5.1 release on an Apple Silicon Mac, then run:
 
 ```sh
-gitea-runner-lume config init --lume --config "$HOME/.config/gitea-runner-lume/config.yaml"
+gitea-runner-lume init
 ```
 
 The command discovers the exact `lume --version`, generates a random
-installation identity, and creates one `xcode-16:lume://xcode-16` profile. Edit
-the profile resources and paths before continuing. The default Lume storage is
-named `home` at `$HOME/.lume`; pass `--storage` and `--storage-path` when using a
-different registered storage.
-
-## 2. Create Controller Keys
-
-The SSH/session identity and image-signing identity are separate:
-
-```sh
-install -d -m 700 "$HOME/.config/gitea-runner-lume/images"
-ssh-keygen -q -t ed25519 -N '' -f "$HOME/.config/gitea-runner-lume/host.key"
-ssh-keygen -q -t ed25519 -N '' -f "$HOME/.config/gitea-runner-lume/image-signing.key"
-cp "$HOME/.config/gitea-runner-lume/image-signing.key.pub" \
-  "$HOME/.config/gitea-runner-lume/image-signing.pub"
-chmod 600 "$HOME/.config/gitea-runner-lume/host.key" \
-  "$HOME/.config/gitea-runner-lume/image-signing.key"
-chmod 644 "$HOME/.config/gitea-runner-lume/host.key.pub" \
-  "$HOME/.config/gitea-runner-lume/image-signing.pub"
-```
+installation identity, creates one `xcode-16:lume://xcode-16` profile, and
+creates separate controller SSH and image-signing identities. It preserves
+valid existing configuration, keys, and runner registration when run again.
+It prompts for the Gitea instance, registration token, and runner name; token
+input is hidden. Edit the profile resources and paths before continuing. The
+default Lume storage is named `home` at `$HOME/.lume`; pass `--storage` and
+`--storage-path` when using a different registered storage, or `--no-register`
+to defer registration.
 
 Keep `image-signing.key` offline except while adopting an image. It is never
 installed in a guest or service plist.
 
-## 3. Create and Bootstrap the Base VM
+## 2. Create and Bootstrap the Base VM
 
 Create a vanilla unattended VM:
 
 ```sh
-gitea-runner-lume --config "$HOME/.config/gitea-runner-lume/config.yaml" \
-  image create --profile xcode-16 --ipsw latest --unattended tahoe
+gitea-runner-lume image create \
+  --profile xcode-16 --ipsw latest --unattended tahoe
 ```
 
 Before adoption, install the same `gitea-runner-lume` binary at
@@ -99,15 +87,13 @@ install a scoped `/etc/resolver/DOMAIN` entry using Tailscale's
 `100.100.100.100` resolver during root image bootstrap. Prefer a scoped resolver
 over pinning a Gitea machine's changing Tailscale IP.
 
-## 4. Attest and Adopt
+## 3. Attest and Adopt
 
 ```sh
-gitea-runner-lume --config "$HOME/.config/gitea-runner-lume/config.yaml" \
-  image adopt --profile xcode-16 \
+gitea-runner-lume image adopt --profile xcode-16 \
   --signing-key-file "$HOME/.config/gitea-runner-lume/image-signing.key"
 
-gitea-runner-lume --config "$HOME/.config/gitea-runner-lume/config.yaml" \
-  image validate --profile xcode-16
+gitea-runner-lume image validate --profile xcode-16
 ```
 
 Both commands boot the image and require pinned SSH plus mutual protocol
@@ -116,16 +102,17 @@ manifest records the attested macOS version, arm64 architecture, non-root guest
 UID, exact agent revision, and SHA-256 of the running guest binary; validation
 and worker startup require the same values.
 
-## 5. Register Normally
+## 4. Register Normally
 
-Create an instance, organization, or repository registration token in Gitea,
-then use the same flow as the official runner:
+This step is already complete unless `init --no-register` was used. To register
+later, create an instance, organization, or repository registration token in
+Gitea, then use the same flow as the official runner:
 
 ```sh
 printf '%s' 'REGISTRATION_TOKEN' > /tmp/gitea-runner-token
 chmod 600 /tmp/gitea-runner-token
 
-gitea-runner-lume --config "$HOME/.config/gitea-runner-lume/config.yaml" register \
+gitea-runner-lume register \
   --no-interactive \
   --instance https://gitea.example.com \
   --token-file /tmp/gitea-runner-token \

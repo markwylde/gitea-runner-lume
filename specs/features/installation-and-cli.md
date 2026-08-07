@@ -9,8 +9,8 @@ and run Gitea Runner Lume without learning a separate Gitea integration model.
 
 The executable is `gitea-runner-lume`. It retains upstream `register`, `daemon`,
 `exec`, `config`, `cache-server`, and version/help behaviour where applicable.
-It adds `image create`, `image adopt`, `image validate`, `doctor`, `status`,
-`cleanup`, and macOS `service` commands.
+It adds `init`, `image create`, `image adopt`, `image validate`, `doctor`,
+`status`, `cleanup`, and macOS `service` commands.
 
 The complete command tree is constructible without executing it so help,
 branding, public flags, and bounded argument errors can be regression tested.
@@ -27,6 +27,26 @@ or organization. Scope is a property of the registration token.
 `config init` starts from the upstream configuration format and adds a `lume`
 section. Unknown Lume keys and unsafe combinations fail closed. Existing
 upstream configurations remain readable when they do not enable Lume labels.
+When `--config` is omitted, every command uses
+`$HOME/.config/gitea-runner-lume/config.yaml`; `config init` creates that file
+and its owner-only parent directories. An explicit `--config` always overrides
+the default. The generated Lume configuration stores the owner-only runner
+registration beside the default configuration rather than in the invoking
+working directory.
+
+Top-level `init` is the primary setup command. It creates the Lume-backed
+configuration when absent, secure controller and image-signing Ed25519 key
+pairs, and the image-manifest directory. Repeated execution preserves valid
+configuration and keys. Partial, unsafe, or mismatched key pairs fail closed;
+the command never creates the guest-only private key on the controller.
+Unless `--no-register` is passed, `init` also performs ordinary Gitea runner
+registration. Missing instance, token, and runner-name values are prompted for;
+token entry is not echoed on an interactive terminal. Flags and an owner-only
+token file support unattended setup. An existing valid registration is kept.
+
+`image create` reports elapsed time while Lume is working. When Lume publishes
+structured provisioning operation or download percentage fields, the command
+reports those values. Provider output is validated and bounded before display.
 
 ## Installation
 

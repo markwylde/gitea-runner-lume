@@ -17,6 +17,8 @@ import (
 const stoppedVMJSON = `[{"name":"worker-a","os":"macOS","cpuCount":4,"memorySize":8589934592,"diskSize":{"allocated":1,"total":107374182400},"display":"1024x768","status":"stopped","provisioningOperation":null,"vncUrl":null,"ipAddress":null,"sshAvailable":null,"locationName":"default","sharedDirectories":null,"networkMode":"nat","downloadProgress":null}]`
 const runningVMJSON = `[{"name":"worker-a","os":"macOS","cpuCount":4,"memorySize":8589934592,"diskSize":{"allocated":1,"total":107374182400},"display":"1024x768","status":"running","provisioningOperation":null,"vncUrl":null,"ipAddress":"192.168.64.4","sshAvailable":true,"locationName":"default","sharedDirectories":null,"networkMode":"nat","downloadProgress":null}]`
 
+const provisioningVMJSON = `[{"name":"worker-a","os":"macOS","cpuCount":4,"memorySize":8589934592,"diskSize":{"allocated":1,"total":107374182400},"display":"1024x768","status":"provisioning","provisioningOperation":"installing macOS","vncUrl":null,"ipAddress":null,"sshAvailable":null,"locationName":"default","sharedDirectories":null,"networkMode":"nat","downloadProgress":42.5}]`
+
 type fakeRunner struct {
 	results []Result
 	calls   [][]string
@@ -60,6 +62,27 @@ func TestProviderUsesStructuredArgumentsAndStrictOutput(t *testing.T) {
 	for _, call := range runner.calls {
 		require.False(t, slices.Contains(call, "sh"))
 	}
+}
+
+func TestProviderExposesStructuredProvisioningProgress(t *testing.T) {
+	runner := &fakeRunner{results: []Result{{Stdout: []byte(provisioningVMJSON)}}}
+	provider, err := NewProvider("/opt/homebrew/bin/lume", "default", time.Second, runner)
+	require.NoError(t, err)
+
+	vm, err := provider.Get(t.Context(), "worker-a")
+	require.NoError(t, err)
+	require.Equal(t, StateProvisioning, vm.State)
+	require.Equal(t, "installing macOS", vm.ProvisioningOperation)
+	require.NotNil(t, vm.DownloadProgress)
+	require.Equal(t, 42.5, *vm.DownloadProgress)
+}
+
+func TestProviderRejectsInvalidProvisioningProgress(t *testing.T) {
+	runner := &fakeRunner{results: []Result{{Stdout: []byte(strings.Replace(provisioningVMJSON, "42.5", "101", 1))}}}
+	provider, err := NewProvider("/opt/homebrew/bin/lume", "default", time.Second, runner)
+	require.NoError(t, err)
+	_, err = provider.Get(t.Context(), "worker-a")
+	require.ErrorContains(t, err, "download progress")
 }
 
 func TestConfigurePreservesInheritedCloneDisk(t *testing.T) {

@@ -258,7 +258,7 @@ func loadImageCmd(ctx context.Context, configFile *string) *cobra.Command {
 			return err
 		}
 		createDone := make(chan struct{})
-		go reportImageCreateProgress(ctx, command.ErrOrStderr(), profile.Image, createDone)
+		go reportImageCreateProgress(ctx, command.ErrOrStderr(), provider, profile.Image, createDone)
 		if err := provider.Create(ctx, profile.Image, ipsw, unattended, profile.CPU, profile.MemoryGB, profile.DiskGB); err != nil {
 			close(createDone)
 			return err
@@ -291,6 +291,9 @@ func loadImageCmd(ctx context.Context, configFile *string) *cobra.Command {
 		profile, ok := cfg.Lume.Profiles[adoptProfile]
 		if !ok {
 			return fmt.Errorf("unknown Lume profile %q", adoptProfile)
+		}
+		if err := requireGuestBootstrap(cfg); err != nil {
+			return err
 		}
 		provider, err := lume.NewProvider(cfg.Lume.Executable, cfg.Lume.Storage, profile.CleanupTimeout, nil)
 		if err != nil {
@@ -352,9 +355,13 @@ func loadImageCmd(ctx context.Context, configFile *string) *cobra.Command {
 	return imageCmd
 }
 
-func reportImageCreateProgress(ctx context.Context, output io.Writer, image string, done <-chan struct{}) {
+type imageProgressProvider interface {
+	Get(context.Context, string) (lume.VM, error)
+}
+
+func reportImageCreateProgress(ctx context.Context, output io.Writer, provider imageProgressProvider, image string, done <-chan struct{}) {
 	started := time.Now()
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	fmt.Fprintf(output, "creating base VM %s; macOS installation can take several minutes\n", image)
 	for {
@@ -364,9 +371,27 @@ func reportImageCreateProgress(ctx context.Context, output io.Writer, image stri
 		case <-done:
 			return
 		case <-ticker.C:
-			fmt.Fprintf(output, "still creating base VM %s (%s elapsed)\n", image, time.Since(started).Round(time.Second))
+			elapsed := time.Since(started).Round(time.Second)
+			pollContext, cancel := context.WithTimeout(ctx, 5*time.Second)
+			vm, err := provider.Get(pollContext, image)
+			cancel()
+			fmt.Fprintln(output, formatImageCreateProgress(image, elapsed, vm, err))
 		}
 	}
+}
+
+func formatImageCreateProgress(image string, elapsed time.Duration, vm lume.VM, pollErr error) string {
+	prefix := fmt.Sprintf("creating base VM %s", image)
+	if pollErr != nil {
+		return fmt.Sprintf("%s (%s elapsed; waiting for Lume progress)", prefix, elapsed)
+	}
+	if vm.DownloadProgress != nil {
+		return fmt.Sprintf("%s: downloading %.0f%% (%s elapsed)", prefix, *vm.DownloadProgress, elapsed)
+	}
+	if vm.ProvisioningOperation != "" {
+		return fmt.Sprintf("%s: %s (%s elapsed)", prefix, vm.ProvisioningOperation, elapsed)
+	}
+	return fmt.Sprintf("%s: %s (%s elapsed)", prefix, vm.State, elapsed)
 }
 
 func attestBaseImage(ctx context.Context, cfg *config.Config, profile config.LumeProfile, expectedAttestation guestproto.Hello) (guestproto.Hello, error) {
@@ -429,6 +454,9 @@ func attestBaseImage(ctx context.Context, cfg *config.Config, profile config.Lum
 }
 
 func validateImages(ctx context.Context, command *cobra.Command, cfg *config.Config, selected string) error {
+	if err := requireGuestBootstrap(cfg); err != nil {
+		return err
+	}
 	guestKey, err := guestagent.LoadEd25519PublicKey(cfg.Lume.GuestPublicKeyFile)
 	if err != nil {
 		return err
@@ -466,6 +494,20 @@ func validateImages(ctx context.Context, command *cobra.Command, cfg *config.Con
 	}
 	if !matched {
 		return fmt.Errorf("unknown Lume profile %q", selected)
+	}
+	return nil
+}
+
+func requireGuestBootstrap(cfg *config.Config) error {
+	for description, path := range map[string]string{
+		"guest public key":    cfg.Lume.GuestPublicKeyFile,
+		"pinned SSH host key": cfg.Lume.KnownHostsFile,
+	} {
+		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("guest bootstrap incomplete: %s is missing at %s; complete docs/lume-setup.md before image adopt", description, path)
+		} else if err != nil {
+			return fmt.Errorf("inspect %s: %w", description, err)
+		}
 	}
 	return nil
 }

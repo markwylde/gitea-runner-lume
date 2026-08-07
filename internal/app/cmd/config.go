@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 
 	"gitea.com/gitea/runner/internal/pkg/config"
@@ -84,21 +83,26 @@ func loadInitConfigCmd(configFile *string) *cobra.Command {
 	initCmd := &cobra.Command{
 		Use:   "init",
 		Short: "Write a minimal or Lume-backed config file",
-		Long:  "Write a minimal config file, or discover Lume and write a secure profile skeleton with --lume.\nWithout --config it writes config.yaml in the working directory.",
+		Long:  "Write a minimal config file, or discover Lume and write a secure profile skeleton with --lume.\nWithout --config it writes ~/.config/gitea-runner-lume/config.yaml.",
 		Args:  cobra.MaximumNArgs(0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			file, taken := *configFile, []string{*configFile}
+			file := *configFile
 			if file == "" {
-				file, taken = defaultConfigFileNames[0], defaultConfigFileNames // any of them would shadow the new file
+				file = defaultConfigFilePath()
 			}
-			for _, name := range taken {
-				if _, err := os.Stat(name); err == nil && !force {
-					return fmt.Errorf("config file %q already exists, pass --force to overwrite it", name)
-				}
+			if file == "" {
+				return fmt.Errorf("resolve home directory for default config path")
+			}
+			file, err := filepath.Abs(file)
+			if err != nil {
+				return fmt.Errorf("resolve config path: %w", err)
+			}
+			if _, err := os.Stat(file); err == nil && !force {
+				return fmt.Errorf("config file %q already exists, pass --force to overwrite it", file)
 			}
 			content := []byte(config.Minimal)
 			if lumeEnabled {
-				generated, err := generateLumeStarter(profileName, imageName, storageName, storagePath)
+				generated, err := generateLumeStarter(profileName, imageName, storageName, storagePath, filepath.Dir(file))
 				if err != nil {
 					return err
 				}
@@ -120,7 +124,7 @@ func loadInitConfigCmd(configFile *string) *cobra.Command {
 	return initCmd
 }
 
-func generateLumeStarter(profile, image, storage, storagePath string) ([]byte, error) {
+func generateLumeStarter(profile, image, storage, storagePath, configDir string) ([]byte, error) {
 	identifier := regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 	if !identifier.MatchString(profile) || !identifier.MatchString(image) || !identifier.MatchString(storage) {
 		return nil, fmt.Errorf("profile, image, and storage must be lowercase Lume identifiers")
@@ -155,10 +159,16 @@ func generateLumeStarter(profile, image, storage, storagePath string) ([]byte, e
 	if _, err := rand.Read(identity); err != nil {
 		return nil, err
 	}
-	configDir := filepath.Join(home, ".config", "gitea-runner-lume")
+	if configDir == "" {
+		configDir = filepath.Join(home, ".config", "gitea-runner-lume")
+	}
+	if !filepath.IsAbs(configDir) {
+		return nil, fmt.Errorf("config directory must be absolute")
+	}
 	stateDir := filepath.Join(home, "Library", "Application Support", "gitea-runner-lume")
 	content := fmt.Sprintf(`runner:
   capacity: 1
+  file: %q
   labels:
     - %s:lume://%s
 
@@ -188,7 +198,7 @@ lume:
       disk_gb: 100
       boot_timeout: 10m
       cleanup_timeout: 5m
-`, profile, profile, executable, storage, storagePath, stateDir, hex.EncodeToString(identity), version,
+`, filepath.Join(configDir, ".runner"), profile, profile, executable, storage, storagePath, stateDir, hex.EncodeToString(identity), version,
 		filepath.Join(configDir, "host.key"), filepath.Join(configDir, "known_hosts"), filepath.Join(configDir, "guest.pub"), filepath.Join(configDir, "image-signing.pub"), profile, image, filepath.Join(configDir, "images", profile+".json"))
 	return []byte(content), nil
 }
@@ -204,33 +214,36 @@ func loadGenerateConfigCmd(use string) *cobra.Command {
 	}
 }
 
-var defaultConfigFileNames = []string{"config.yaml", "config.yml"}
+func defaultConfigFilePath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "gitea-runner-lume", "config.yaml")
+}
 
 func resolveConfigFile(cmd *cobra.Command, configFile *string) (string, error) {
-	if *configFile != "" {
-		return *configFile, nil
+	file := *configFile
+	if file == "" {
+		file = defaultConfigFilePath()
 	}
-
-	var dirs []string
-	if wd, err := os.Getwd(); err == nil {
-		dirs = append(dirs, wd)
+	if file == "" {
+		return "", fmt.Errorf("resolve home directory for default config path")
 	}
-	if exe, err := os.Executable(); err == nil {
-		if dir := filepath.Dir(exe); !slices.Contains(dirs, dir) {
-			dirs = append(dirs, dir)
+	stat, err := os.Stat(file)
+	if err == nil && !stat.IsDir() {
+		return file, nil
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("inspect config file %q: %w", file, err)
+	}
+	if err == nil && stat.IsDir() {
+		return "", fmt.Errorf("config path %q is a directory", file)
+	}
+	if cmd != nil {
+		if flag := cmd.Flags().Lookup("config"); flag != nil && flag.Changed {
+			return "", fmt.Errorf("config file %q does not exist", file)
 		}
 	}
-
-	for _, dir := range dirs {
-		for _, name := range defaultConfigFileNames {
-			candidate := filepath.Join(dir, name)
-			if stat, err := os.Stat(candidate); err == nil && !stat.IsDir() {
-				fmt.Fprintf(cmd.ErrOrStderr(), "using config file %q\n", candidate)
-				return candidate, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("no %s found in %s, pass one with --config",
-		strings.Join(defaultConfigFileNames, " or "), strings.Join(dirs, " or "))
+	return "", fmt.Errorf("default config file %q does not exist; create it with `gitea-runner-lume init` or pass --config", file)
 }
