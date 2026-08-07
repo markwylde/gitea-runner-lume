@@ -57,11 +57,9 @@ For a custom unattended password, place it in an owner-only file and pass
 `--password-file PATH`. Do not use `--password` in automation because process
 arguments are observable.
 
-Private DNS used by Gitea must also resolve inside a Lume NAT guest. Tailscale
-split DNS is not inherited automatically on the tested host. When required,
-install a scoped `/etc/resolver/DOMAIN` entry using Tailscale's
-`100.100.100.100` resolver during root image bootstrap. Prefer a scoped resolver
-over pinning a Gitea machine's changing Tailscale IP.
+Bootstrap verifies the registered Gitea hostname inside the guest. When Lume
+NAT does not inherit host-only split DNS, it installs a validated mapping for
+that hostname automatically.
 
 ## 3. Attest and Adopt
 

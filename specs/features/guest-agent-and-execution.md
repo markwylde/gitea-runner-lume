@@ -30,6 +30,10 @@ On macOS the workspace uses canonical `/private/var/tmp` paths so Git
 credential `includeIf` rules cannot diverge through the `/var/tmp` symlink.
 Structured process environments accept bounded action-input names containing
 hyphens, while rejecting empty names, `=`, NUL, and oversized names or values.
+Every guest process retains workflow-provided `PATH` entries and also receives
+the root-owned macOS tool directories provisioned by the base image, including
+`/usr/local/bin`, so JavaScript actions can resolve the verified Node runtime
+when the controller daemon was started with launchd's restricted environment.
 Shell, JavaScript, and composite actions available on arm64 macOS retain the
 upstream expression, environment-file, masking, cache, artifact, and reporting
 contracts.
@@ -59,6 +63,8 @@ possible; VM deletion is the final confidentiality boundary.
   during the job and nowhere in retained host state.
 - Logs, masks, outputs, cache, artifacts, step failure, timeout, and cancellation
   match upstream runner behaviour.
+- A private Gitea hostname resolvable through controller-only split DNS remains
+  reachable from disposable guests created from the bootstrapped image.
 - Malformed, replayed, reordered, oversized, or unauthenticated agent messages
   cannot execute code or forge task completion.
 - No worker can execute a second task.

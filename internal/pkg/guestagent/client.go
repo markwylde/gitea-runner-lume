@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,6 +160,11 @@ func (c *Client) Archive(ctx context.Context, path string) (io.ReadCloser, error
 }
 
 func (c *Client) Exec(ctx context.Context, command []string, env map[string]string, user, workdir string, output io.Writer) error {
+	env = maps.Clone(env)
+	if env == nil {
+		env = make(map[string]string)
+	}
+	env["PATH"] = guestExecutionPath(env["PATH"])
 	for name, value := range env {
 		if !envNamePattern.MatchString(name) {
 			return fmt.Errorf("remote command environment name %q is invalid", name)
@@ -212,6 +218,20 @@ func (c *Client) Exec(ctx context.Context, command []string, env map[string]stri
 			return fmt.Errorf("unexpected guest response %q", message.Type)
 		}
 	}
+}
+
+func guestExecutionPath(requested string) string {
+	directories := filepath.SplitList(requested)
+	seen := make(map[string]struct{}, len(directories)+5)
+	for _, directory := range directories {
+		seen[directory] = struct{}{}
+	}
+	for _, directory := range []string{"/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"} {
+		if _, exists := seen[directory]; !exists {
+			directories = append(directories, directory)
+		}
+	}
+	return strings.Join(directories, string(filepath.ListSeparator))
 }
 
 func (*Client) Inspect(context.Context) (*container.Info, error) {
