@@ -1,0 +1,153 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Verify immutable semantic-version tag
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" = "$(git rev-parse HEAD)"
+          test -z "$(git status --porcelain)"
+
+      - name: Verify release
+        run: |
+          go test ./internal/...
+          go test -race ./internal/pkg/lume ./internal/pkg/guestagent ./internal/app/run ./internal/app/cmd
+          go vet ./...
+          ./scripts/codesign-release-binary_test.sh
+
+      - name: Check Apple release credentials
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ vars.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          for name in MACOS_CERTIFICATE_P12 MACOS_CERTIFICATE_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "$(printenv "$name")" ]; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "Refusing to publish an unsigned or unnotarized release; missing:$missing" >&2
+            exit 1
+          fi
+
+      - name: Import Apple signing certificate
+        uses: apple-actions/import-codesign-certs@63fff01cd422d4b7b855d40ca1e9d34d2de9427d # v3
+        with:
+          p12-file-base64: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          p12-password: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+
+      - name: Install Syft for SBOM generation
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          syft-version: v1.48.0
+
+      - name: Select Developer ID identity
+        env:
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          identities="$RUNNER_TEMP/developer-identities"
+          security find-identity -v -p codesigning | grep -F "Developer ID Application:" | grep -F "($APPLE_TEAM_ID)" > "$identities"
+          test "$(wc -l < "$identities" | tr -d '[:space:]')" = 1
+          identity="$(awk '{print $2}' "$identities")"
+          [[ "$identity" =~ ^[0-9A-Fa-f]{40}$ ]]
+          echo "MACOS_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Build signed release assets
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
+        with:
+          distribution: goreleaser
+          version: v2.12.7
+          args: release --clean --skip=publish
+        env:
+          RELEASE_REQUIRE_SIGNING: "1"
+
+      - name: Notarize and verify exact release payload
+        env:
+          APPLE_ID: ${{ vars.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          test "$(find dist -type f -name gitea-runner-lume -perm -111 | wc -l | tr -d '[:space:]')" = 1
+          test "$(find dist -maxdepth 1 -type f -name 'gitea-runner-lume_*_macOS_arm64.tar.gz' | wc -l | tr -d '[:space:]')" = 1
+          binary="$(find dist -type f -name gitea-runner-lume -perm -111)"
+          archive="$(find dist -maxdepth 1 -type f -name 'gitea-runner-lume_*_macOS_arm64.tar.gz')"
+
+          codesign --verify --strict --verbose=2 "$binary"
+          codesign -dvv "$binary" 2>&1 | grep -F "TeamIdentifier=$APPLE_TEAM_ID"
+
+          notary_zip="$RUNNER_TEMP/gitea-runner-lume-notary.zip"
+          ditto -c -k --keepParent "$binary" "$notary_zip"
+          xcrun notarytool submit "$notary_zip" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait \
+            --output-format json > dist/notarization.json
+          jq -e '.status == "Accepted"' dist/notarization.json
+          spctl --assess --type execute --verbose=4 "$binary"
+
+          extracted="$RUNNER_TEMP/release-archive"
+          mkdir -p "$extracted"
+          tar -xzf "$archive" -C "$extracted"
+          archived_binary="$extracted/gitea-runner-lume"
+          test -f "$archived_binary"
+          test ! -L "$archived_binary"
+          test "$(shasum -a 256 "$binary" | awk '{print $1}')" = "$(shasum -a 256 "$archived_binary" | awk '{print $1}')"
+          codesign --verify --strict --verbose=2 "$archived_binary"
+          codesign -dvv "$archived_binary" 2>&1 | grep -F "TeamIdentifier=$APPLE_TEAM_ID"
+
+          (cd dist && shasum -a 256 -c checksums.txt)
+
+      - name: Publish immutable GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          shopt -s nullglob
+          archives=(dist/gitea-runner-lume_*_macOS_arm64.tar.gz)
+          sboms=(dist/*.sbom.*)
+          test "${#archives[@]}" = 1
+          test "${#sboms[@]}" -ge 1
+          test -f dist/checksums.txt
+          test -f dist/notarization.json
+          gh release create "$GITHUB_REF_NAME" \
+            "${archives[@]}" "${sboms[@]}" dist/checksums.txt dist/notarization.json \
+            --repo "$GH_REPO" \
+            --verify-tag \
+            --generate-notes \
+            --title "$GITHUB_REF_NAME"

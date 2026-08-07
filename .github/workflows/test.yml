@@ -34,4 +34,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      - name: Validate workflows and release signing guard
+        run: |
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/*.yml
+          ./scripts/codesign-release-binary_test.sh
       - run: go test ./act/model ./act/exprparser ./act/common/... ./act/filecollector ./act/lookpath

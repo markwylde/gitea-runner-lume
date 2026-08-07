@@ -21,6 +21,10 @@ jobs:
         run: |
           go test ./...
           go vet ./...
+      - name: Install Syft for SBOM generation
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          syft-version: v1.48.0
       - name: Release macOS arm64 archive, checksum, and SBOM
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:

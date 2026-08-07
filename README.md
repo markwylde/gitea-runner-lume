@@ -121,6 +121,21 @@ go test -race ./internal/pkg/lume ./internal/pkg/guestagent ./internal/app/run
 go vet ./...
 ```
 
+## Releases
+
+Push a semantic version tag to build a signed and notarized Apple Silicon
+archive, checksum, SBOM, and GitHub Release:
+
+```sh
+git tag -a v0.1.0 -m "v0.1.0"
+git push origin v0.1.0
+```
+
+The repository must define `APPLE_ID` and `APPLE_TEAM_ID` variables plus
+`MACOS_CERTIFICATE_P12`, `MACOS_CERTIFICATE_PASSWORD`, and
+`APPLE_APP_SPECIFIC_PASSWORD` secrets. The workflow fails before publication
+when any credential, signature, notarization, or artifact check fails.
+
 See [SECURITY.md](SECURITY.md), [UPSTREAM.md](UPSTREAM.md), and
 [docs/lume-setup.md](docs/lume-setup.md) for the security model, fork baseline,
 and full image-hardening procedure.
