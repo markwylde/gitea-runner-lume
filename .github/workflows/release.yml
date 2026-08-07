@@ -58,11 +58,11 @@ jobs:
             exit 0
           fi
 
-          release_type=patch
+          release_type="patch"
           if grep -Eq '^[a-zA-Z]+(\([^)]+\))?!:' "$subjects" || grep -q '^BREAKING CHANGE:' "$bodies"; then
-            release_type=major
+            release_type="major"
           elif grep -Eq '^feat(\([^)]+\))?:' "$subjects"; then
-            release_type=minor
+            release_type="minor"
           fi
 
           IFS=. read -r major minor patch <<< "$current_version"
