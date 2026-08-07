@@ -25,6 +25,13 @@ jobs:
       - run: go test -race ./internal/pkg/lume ./internal/pkg/guestagent ./internal/app/run ./internal/app/cmd
       - run: go vet ./...
       - run: go build ./...
+      - name: Test release installer
+        if: matrix.os == 'macos-14'
+        env:
+          GITEA_RUNNER_LUME_INSTALL_DIR: ${{ runner.temp }}/installer-bin
+        run: |
+          ./install.sh
+          "$GITEA_RUNNER_LUME_INSTALL_DIR/gitea-runner-lume" version | grep -Eq '^gitea-runner-lume [0-9]+\.[0-9]+\.[0-9]+$'
 
   act-units:
     runs-on: ubuntu-latest
@@ -37,5 +44,6 @@ jobs:
       - name: Validate workflows and release signing guard
         run: |
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/*.yml
+          shellcheck install.sh
           ./scripts/codesign-release-binary_test.sh
       - run: go test ./act/model ./act/exprparser ./act/common/... ./act/filecollector ./act/lookpath

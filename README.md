@@ -21,25 +21,12 @@ VMs.
 ## Install
 
 ```sh
-VERSION=0.1.0
-ARCHIVE="gitea-runner-lume_${VERSION}_macOS_arm64.tar.gz"
-RELEASE="https://github.com/markwylde/gitea-runner-lume/releases/download/v${VERSION}"
-TEMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TEMP_DIR"' EXIT
-
-curl -fL "$RELEASE/$ARCHIVE" -o "$TEMP_DIR/$ARCHIVE"
-curl -fL "$RELEASE/checksums.txt" -o "$TEMP_DIR/checksums.txt"
-CHECKSUM_LINE="$(awk -v archive="$ARCHIVE" '$2 == archive { print }' \
-  "$TEMP_DIR/checksums.txt")"
-test -n "$CHECKSUM_LINE"
-printf '%s\n' "$CHECKSUM_LINE" | (cd "$TEMP_DIR" && shasum -a 256 -c -)
-
-tar -xzf "$TEMP_DIR/$ARCHIVE" -C "$TEMP_DIR"
-install -d "$HOME/.local/bin"
-install -m 755 "$TEMP_DIR/gitea-runner-lume" \
-  "$HOME/.local/bin/gitea-runner-lume"
-gitea-runner-lume version
+curl -fsSL https://raw.githubusercontent.com/markwylde/gitea-runner-lume/main/install.sh | bash
 ```
+
+The installer downloads the latest Apple Silicon release, verifies its
+published checksum, and installs it to `~/.local/bin`. Run the same command to
+upgrade. See [install.sh](install.sh) for version pinning and custom locations.
 
 Ensure `$HOME/.local/bin` is in `PATH`, then install Lume:
 

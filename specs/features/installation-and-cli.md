@@ -39,6 +39,12 @@ published SHA-256 checksum before extracting or executing the binary. Cloning
 the repository and building with Go is a contributor workflow, not the primary
 operator installation path.
 
+The primary operator path is a rerunnable shell installer. It supports only
+Apple Silicon macOS, installs without privilege escalation into an explicit or
+per-user binary directory, resolves either the latest release or an explicitly
+pinned version, and verifies the archive against the release checksum before
+extraction. It does not modify shell profiles.
+
 Service installation creates a user-owned LaunchAgent and does not place
 registration secrets in the plist. `doctor` validates architecture, macOS,
 Lume, storage, base images, registration file permissions, Gitea connectivity,
