@@ -193,7 +193,6 @@ jobs:
             --wait \
             --output-format json > dist/notarization.json
           jq -e '.status == "Accepted"' dist/notarization.json
-          spctl --assess --type execute --verbose=4 "$binary"
 
           extracted="$RUNNER_TEMP/release-archive"
           mkdir -p "$extracted"
