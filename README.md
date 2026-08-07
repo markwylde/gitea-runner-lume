@@ -72,26 +72,18 @@ gitea-runner-lume image adopt \
 gitea-runner-lume image validate --profile xcode-16
 ```
 
-## Register and run
+## Start the runner
 
-`init` registers the runner by default. If setup used `--no-register`, create a
-runner registration token in Gitea at instance, organization, or repository
-scope and run:
+After image adoption and validation succeed, verify the complete installation
+and start the runner service:
 
 ```sh
-printf '%s' 'REGISTRATION_TOKEN' > /tmp/gitea-runner-token
-chmod 600 /tmp/gitea-runner-token
-
-gitea-runner-lume register \
-  --no-interactive \
-  --instance https://gitea.example.com \
-  --token-file /tmp/gitea-runner-token \
-  --name "$(scutil --get LocalHostName)-lume" \
-  --labels xcode-16:lume://xcode-16
-
 gitea-runner-lume doctor
 gitea-runner-lume service install
 ```
+
+The runner remains offline in Gitea until the service starts. If `init` was run
+with `--no-register`, run `gitea-runner-lume register` before these commands.
 
 Use the label in a Gitea workflow:
 
