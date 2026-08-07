@@ -264,7 +264,8 @@ func loadImageCmd(ctx context.Context, configFile *string) *cobra.Command {
 			return err
 		}
 		close(createDone)
-		fmt.Fprintf(command.OutOrStdout(), "created stopped base VM %s; install and harden the guest agent, then run image adopt\n", profile.Image)
+		fmt.Fprintf(command.OutOrStdout(), "created stopped base VM %s\n", profile.Image)
+		fmt.Fprintf(command.OutOrStdout(), "next: gitea-runner-lume image bootstrap --profile %s\n", createProfile)
 		return nil
 	}}
 	create.Flags().StringVar(&createProfile, "profile", "", "configured profile to create")
@@ -272,6 +273,7 @@ func loadImageCmd(ctx context.Context, configFile *string) *cobra.Command {
 	create.Flags().StringVar(&unattended, "unattended", "tahoe", "Lume unattended preset or YAML path")
 	_ = create.MarkFlagRequired("profile")
 	imageCmd.AddCommand(create)
+	imageCmd.AddCommand(loadImageBootstrapCmd(ctx, configFile))
 	var profileName string
 	validate := &cobra.Command{Use: "validate", Short: "Verify configured signed image manifests and stopped VMs", Args: cobra.NoArgs, RunE: func(command *cobra.Command, _ []string) error {
 		cfg, err := loadCommandConfig(command, configFile)

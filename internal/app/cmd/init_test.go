@@ -34,6 +34,7 @@ func TestInitCreatesDefaultConfigurationAndKeysIdempotently(t *testing.T) {
 	first := run()
 	require.Contains(t, first, "created Lume configuration")
 	require.Contains(t, first, "image create --profile xcode-16")
+	require.Contains(t, first, "image bootstrap --profile xcode-16")
 
 	dir := filepath.Join(home, ".config", "gitea-runner-lume")
 	for _, item := range []struct {

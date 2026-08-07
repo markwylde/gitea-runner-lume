@@ -9,8 +9,8 @@ and run Gitea Runner Lume without learning a separate Gitea integration model.
 
 The executable is `gitea-runner-lume`. It retains upstream `register`, `daemon`,
 `exec`, `config`, `cache-server`, and version/help behaviour where applicable.
-It adds `init`, `image create`, `image adopt`, `image validate`, `doctor`,
-`status`, `cleanup`, and macOS `service` commands.
+It adds `init`, `image create`, `image bootstrap`, `image adopt`, `image
+validate`, `doctor`, `status`, `cleanup`, and macOS `service` commands.
 
 The complete command tree is constructible without executing it so help,
 branding, public flags, and bounded argument errors can be regression tested.

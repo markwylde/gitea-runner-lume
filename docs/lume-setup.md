@@ -34,52 +34,28 @@ gitea-runner-lume image create \
   --profile xcode-16 --ipsw latest --unattended tahoe
 ```
 
-Before adoption, install the same `gitea-runner-lume` binary at
-`/usr/local/bin/gitea-runner-lume` in the VM. Create
-`/etc/gitea-runner-lume`, owned by the unprivileged `lume` account with mode
-`0700`, and install:
-
-- `host.key.pub` as `/etc/gitea-runner-lume/host.pub`;
-- a newly generated guest-only Ed25519 private key as
-  `/etc/gitea-runner-lume/guest.key`, mode `0600`; and
-- `host.key.pub` in the `lume` account's SSH `authorized_keys`.
-
-Install Apple Command Line Tools and a supported arm64 Node runtime before
-adoption. The current tested image uses Command Line Tools 26.6, Apple Git
-2.50.1, and Node 24.19.0. Verify downloaded Node archives against the release's
-published `SHASUMS256.txt`; do not install an unverified archive.
-
-Finish macOS Setup Assistant before hardening the account. Remote Login on
-macOS can be restricted to administrators by default, so add `lume` to the
-dedicated `com.apple.access_ssh` group and prove key-only SSH works before
-removing it from `admin`:
+Bootstrap and harden it:
 
 ```sh
-sudo dseditgroup -o edit -a lume -t user com.apple.access_ssh
-sudo dseditgroup -o edit -d lume -t user admin
+gitea-runner-lume image bootstrap --profile xcode-16
 ```
 
-After the removal, verify a fresh controller SSH connection still succeeds and
-that `id` does not report administrator membership. Do not remove administrator
-membership first: doing so can lock the operator out before the SSH allow group
-is configured.
+The command streams the exact controller binary into the VM, installs Apple
+Command Line Tools and checksum-verified Node 24, generates the guest identity,
+installs the controller public key, disables password login and autologin,
+removes the runner account from `admin`, exports only public guest identities,
+and shuts down cleanly. It then boots once more to prove that key-only access
+and the hardened state persisted. Rerunning the command is safe.
 
-Lume's Tahoe unattended account can be tokenless, causing both `sysadminctl`
-and `dscl -passwd` to fail password updates. In that case, remove its
-`ShadowHashData` and `AuthenticationAuthority` records in the same root
-hardening transaction, prove `dscl . -authonly lume lume` fails, and only then
-drop administrator membership. Password SSH must also be disabled independently.
+macOS requires an administrator account, so bootstrap creates a hidden
+`grl-maintenance` administrator with a random password that is discarded. SSH
+is restricted to the non-administrator `lume` user; the controller retains no
+administrator credential.
 
-Export only the guest public key to the controller path configured as
-`guest_public_key_file`. Disable SSH password and keyboard-interactive
-authentication, remove the default password and autologin configuration, and
-stop the VM. Do not put the runner registration file, image-signing private key,
-Gitea tokens, project files, or workflow data in the image.
-
-Record the VM's SSH host public key under the configured image name, not its
-temporary DHCP address, in `known_hosts`. For the default profile the entry
-starts with `grl-xcode-16`. Verify this key through the local VM console before
-trusting it; `ssh-keyscan` alone is not authentication.
+Lume's documented unattended password is used only during initial bootstrap.
+For a custom unattended password, place it in an owner-only file and pass
+`--password-file PATH`. Do not use `--password` in automation because process
+arguments are observable.
 
 Private DNS used by Gitea must also resolve inside a Lume NAT guest. Tailscale
 split DNS is not inherited automatically on the tested host. When required,
@@ -121,4 +97,5 @@ gitea-runner-lume register \
 ```
 
 The runner should appear immediately in the Gitea scope selected by that
-registration token. Run `doctor`, then `daemon` or `service install`.
+registration token. After image validation, run `service install`, then
+`doctor`.

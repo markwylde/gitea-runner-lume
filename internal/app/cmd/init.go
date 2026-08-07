@@ -102,7 +102,7 @@ func loadInitCmd(configFile *string) *cobra.Command {
 				fmt.Fprintln(command.OutOrStdout(), "the runner will remain offline until image setup is complete and the service is installed")
 			}
 			fmt.Fprintf(command.OutOrStdout(), "next: gitea-runner-lume image create --profile %s --ipsw latest --unattended tahoe\n", profileName)
-			fmt.Fprintln(command.OutOrStdout(), "after creating the VM, complete the guest bootstrap in docs/lume-setup.md before image adopt")
+			fmt.Fprintf(command.OutOrStdout(), "then: gitea-runner-lume image bootstrap --profile %s\n", profileName)
 			return nil
 		},
 	}

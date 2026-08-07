@@ -55,6 +55,7 @@ func TestProviderUsesStructuredArgumentsAndStrictOutput(t *testing.T) {
 	vm, err := provider.Get(t.Context(), "worker-a")
 	require.NoError(t, err)
 	require.Equal(t, "192.168.64.4", vm.IPAddress)
+	require.True(t, vm.SSHAvailable)
 	require.NoError(t, provider.Clone(t.Context(), "base-image", "worker-b"))
 	require.NoError(t, provider.Start(t.Context(), "worker-b"))
 	require.NoError(t, provider.Stop(t.Context(), "worker-b", true))
@@ -73,6 +74,7 @@ func TestProviderExposesStructuredProvisioningProgress(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, StateProvisioning, vm.State)
 	require.Equal(t, "installing macOS", vm.ProvisioningOperation)
+	require.False(t, vm.SSHAvailable)
 	require.NotNil(t, vm.DownloadProgress)
 	require.Equal(t, 42.5, *vm.DownloadProgress)
 }

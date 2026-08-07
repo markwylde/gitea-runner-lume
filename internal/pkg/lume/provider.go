@@ -42,6 +42,7 @@ type VM struct {
 	IPAddress             string   `json:"ip_address,omitempty"`
 	ProvisioningOperation string   `json:"provisioning_operation,omitempty"`
 	DownloadProgress      *float64 `json:"download_progress,omitempty"`
+	SSHAvailable          bool     `json:"ssh_available,omitempty"`
 }
 
 type lumeDiskSize struct {
@@ -305,6 +306,9 @@ func convertVM(details lumeVMDetails) (VM, error) {
 	vm := VM{
 		ID: details.Name, Name: details.Name, State: state, Storage: details.LocationName,
 		IPAddress: ip, ProvisioningOperation: operation, DownloadProgress: details.DownloadProgress,
+	}
+	if details.SSHAvailable != nil {
+		vm.SSHAvailable = *details.SSHAvailable
 	}
 	if err := validateVM(vm); err != nil {
 		return VM{}, err
