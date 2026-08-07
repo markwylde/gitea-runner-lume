@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -63,6 +64,10 @@ func TestRootPublicFlagsAndSubcommands(t *testing.T) {
 	}
 	service, _, err := command.Find([]string{"service"})
 	require.NoError(t, err)
+	if runtime.GOOS != "darwin" {
+		require.Empty(t, service.Commands())
+		return
+	}
 	for _, child := range []string{"install", "start", "status", "stop", "uninstall"} {
 		item, _, err := service.Find([]string{child})
 		require.NoError(t, err)
