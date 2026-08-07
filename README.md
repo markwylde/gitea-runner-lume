@@ -140,6 +140,9 @@ The repository must define `APPLE_ID` and `APPLE_TEAM_ID` variables plus
 `APPLE_APP_SPECIFIC_PASSWORD` secrets. The workflow fails before publication
 when any credential, signature, notarization, or artifact check fails.
 
+Set the optional `OPENROUTER_API_KEY` secret for AI-generated release notes.
+Without it, releases use GitHub-generated notes.
+
 See [SECURITY.md](SECURITY.md), [UPSTREAM.md](UPSTREAM.md), and
 [docs/lume-setup.md](docs/lume-setup.md) for the security model, fork baseline,
 and full image-hardening procedure.

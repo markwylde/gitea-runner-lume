@@ -31,6 +31,11 @@ then creates the version tag. It builds, signs, notarizes, verifies, and
 publishes only that tagged commit. A directly pushed tag does not publish a
 release.
 
+When an OpenRouter credential is configured, the workflow generates concise
+release notes using only commits and changed-file evidence from the released git
+range. AI note generation is advisory: failure falls back to GitHub-generated
+notes and never bypasses verification or blocks a verified release.
+
 Upgrades drain work before replacing the daemon. Schema migration is explicit,
 backed up, and reversible. A host binary refuses incompatible guest agents and
 base-image manifests.

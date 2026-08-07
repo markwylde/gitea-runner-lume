@@ -114,6 +114,38 @@ jobs:
           git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
           test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$source_commit"
 
+      - name: Detect AI release-notes credential
+        id: release_notes_credential
+        if: env.RELEASE_NEEDED == 'true'
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          if [ -n "$OPENROUTER_API_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate AI release notes
+        id: generate_release_notes
+        if: env.RELEASE_NEEDED == 'true' && steps.release_notes_credential.outputs.available == 'true'
+        continue-on-error: true
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: node scripts/generate-release-notes.mjs "$RELEASE_TAG"
+
+      - name: Use fallback release notes
+        if: env.RELEASE_NEEDED == 'true' && (steps.release_notes_credential.outputs.available != 'true' || steps.generate_release_notes.outcome != 'success')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh api --method POST "repos/$GH_REPO/releases/generate-notes" \
+            -f tag_name="$RELEASE_TAG" \
+            -f target_commitish="$(git rev-parse HEAD)" \
+            --jq .body > RELEASE.md
+          test -s RELEASE.md
+
       - name: Check Apple release credentials
         if: env.RELEASE_NEEDED == 'true'
         env:
@@ -223,5 +255,5 @@ jobs:
             "${archives[@]}" "${sboms[@]}" dist/checksums.txt dist/notarization.json \
             --repo "$GH_REPO" \
             --verify-tag \
-            --generate-notes \
+            --notes-file RELEASE.md \
             --title "$RELEASE_TAG"
