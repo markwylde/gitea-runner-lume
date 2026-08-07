@@ -36,13 +36,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          echo "RELEASE_NEEDED=false" >> "$GITHUB_ENV"
           test "$GITHUB_REF" = "refs/heads/main"
           test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
           test -z "$(git status --porcelain)"
 
           latest_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | head -n 1)"
-          range=HEAD
+          range="HEAD"
           current_version=0.0.0
           if [ -n "$latest_tag" ]; then
             [[ "$latest_tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]
@@ -72,9 +71,11 @@ jobs:
             minor) RELEASE_TAG="v${major}.$((minor + 1)).0" ;;
             patch) RELEASE_TAG="v${major}.${minor}.$((patch + 1))" ;;
           esac
-          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
-          echo "GORELEASER_CURRENT_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
-          echo "RELEASE_NEEDED=true" >> "$GITHUB_ENV"
+          {
+            echo "RELEASE_TAG=$RELEASE_TAG"
+            echo "GORELEASER_CURRENT_TAG=$RELEASE_TAG"
+            echo "RELEASE_NEEDED=true"
+          } >> "$GITHUB_ENV"
 
           if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Tag already exists: $RELEASE_TAG" >&2
