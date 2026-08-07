@@ -1,0 +1,10 @@
+name: services-empty-image
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: ${{ false && 'postgres:16' || '' }}
+    steps:
+      - run: echo "empty-image service was skipped"

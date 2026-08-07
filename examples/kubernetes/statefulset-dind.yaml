@@ -1,0 +1,96 @@
+# StatefulSet variant of the dind example.
+#
+# Unlike the Deployment, a StatefulSet gives each replica a stable identity and,
+# via volumeClaimTemplates, its own persistent volume. That means every runner
+# pod keeps its own `.runner` registration file across restarts and reschedules,
+# so it re-attaches to the server instead of trying to register again.
+apiVersion: v1
+data:
+  # The registration token can be obtained from the web UI, API or command-line.
+  # You can also set a pre-defined global runner registration token for the Gitea instance via
+  # `GITEA_RUNNER_REGISTRATION_TOKEN`/`GITEA_RUNNER_REGISTRATION_TOKEN_FILE` environment variable.
+  token: << base64 encoded registration token >>
+kind: Secret
+metadata:
+  name: runner-secret
+type: Opaque
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: runner
+  name: runner
+spec:
+  serviceName: runner
+  replicas: 1
+  selector:
+    matchLabels:
+      app: runner
+  template:
+    metadata:
+      labels:
+        app: runner
+    spec:
+      restartPolicy: Always
+      volumes:
+      - name: docker-socket
+        emptyDir: {}
+      initContainers:
+      - name: docker
+        image: docker:28.2.2-dind
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: docker-socket
+          mountPath: /var/run
+        # Keeps the images pulled for jobs across restarts. Without this, the
+        # daemon's data root is ephemeral and every job re-pulls its images.
+        - name: docker-data
+          mountPath: /var/lib/docker
+        startupProbe:
+          exec:
+            command: ["/usr/bin/test", "-S", "/var/run/docker.sock"]
+        livenessProbe:
+          exec:
+            command: ["/usr/bin/test", "-S", "/var/run/docker.sock"]
+        restartPolicy: Always
+      containers:
+      - name: runner
+        image: gitea/runner:nightly
+        env:
+        - name: GITEA_INSTANCE_URL
+          value: http://gitea-http.gitea.svc.cluster.local:3000
+        - name: GITEA_RUNNER_REGISTRATION_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: runner-secret
+              key: token
+        volumeMounts:
+        - name: runner-data
+          mountPath: /data
+        - name: docker-socket
+          mountPath: /var/run
+  volumeClaimTemplates:
+  # The runner's working directory: the .runner registration file and, optionally,
+  # the config file.
+  - metadata:
+      name: runner-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
+      storageClassName: standard
+  # The Docker daemon's data root: the images pulled for jobs. Size it for the
+  # images you expect to cache.
+  - metadata:
+      name: docker-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 20Gi
+      storageClassName: standard

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "local>gitea/renovate-config"
+  ],
+  "packageRules": [
+    {
+      "matchPackageNames": ["go.yaml.in/yaml/v4"],
+      "allowedVersions": "<4.0.0-rc.4", // rc.4 removes the error types actionlint builds against
+    },
+  ],
+}
