@@ -26,10 +26,29 @@ credentials created by Lume's unattended setup are rotated or removed, and the
 controller does not retain a reusable guest administrator password.
 
 `image create` delegates macOS installation to supported Lume commands and
-makes long-running progress visible. `image adopt` never modifies a VM before
-inspection and confirmation. Both result in a stopped image plus a controller
-manifest containing the image identity, expected guest fingerprint, macOS and
-guest-agent revisions, validation time, and compatibility schema.
+makes long-running progress visible. `image bootstrap` turns that unattended
+VM into a runner image through SSH. It installs the exact local controller
+runner binary as the version-matched guest agent, installs and
+verifies generic Actions prerequisites, generates the guest identity inside
+the VM, installs the controller public key, pins public guest and SSH host
+identities on the controller, and removes temporary password and administrator
+access before stopping the VM. It is idempotent and never transfers a Gitea
+registration, controller private key, image-signing private key, or host user
+directory into the VM. Because macOS requires an administrator account,
+bootstrap creates a hidden maintenance administrator with a random discarded
+password. SSH remains restricted to the non-administrator workflow user, and
+the controller retains no reusable administrator credential.
+
+Bootstrap accepts Lume's documented temporary unattended username and password
+only for initial provisioning. Credentials supplied by flag are treated as
+observable and documentation prefers an owner-only password file. A failed
+bootstrap does not adopt or sign the VM and reports the failed phase. Public
+identity files are written atomically with restrictive parent permissions.
+
+`image adopt` never modifies a VM before inspection and confirmation. Adoption
+results in a stopped image plus a controller manifest containing the image
+identity, expected guest fingerprint, macOS and guest-agent revisions,
+validation time, and compatibility schema.
 
 ## Validation and update
 
@@ -47,6 +66,8 @@ or incompatible base image.
 ## Acceptance outcomes
 
 - Creating and validating a clean image produces a worker-ready stopped VM.
+- The documented path from installation through an online runner contains no
+  hidden mandatory guest setup steps.
 - Seeded secret and registration canaries cause validation to fail.
 - A failed update leaves the current image usable.
 - Adoption cannot claim or later delete the operator's original VM as a worker.

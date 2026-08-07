@@ -67,7 +67,7 @@ Normal setup mirrors the official runner:
 ```text
 gitea-runner-lume register
 gitea-runner-lume config init
-gitea-runner-lume image create|adopt|validate
+gitea-runner-lume image create|bootstrap|adopt|validate
 gitea-runner-lume daemon
 ```
 

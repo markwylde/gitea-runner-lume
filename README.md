@@ -46,26 +46,12 @@ keys under `~/.config/gitea-runner-lume`, then prompts for the Gitea instance,
 runner registration token, and runner name. Pass `--config PATH` to use another
 configuration file or `--no-register` to initialize local files only.
 
-## Create the base VM
+## Create the base image
 
 ```sh
 gitea-runner-lume image create \
   --profile xcode-16 --ipsw latest --unattended tahoe
-```
-
-Inside the VM:
-
-1. Create a non-admin `lume` user with key-only SSH access.
-2. Install the same runner binary at `/usr/local/bin/gitea-runner-lume`.
-3. Install Apple Command Line Tools and an arm64 Node runtime.
-4. Install the controller public key and a separate guest signing key as
-   described in [docs/lume-setup.md](docs/lume-setup.md).
-5. Disable password SSH, autologin, and the account password.
-6. Stop the VM and pin its SSH host key in the configured `known_hosts` file.
-
-Adopt and validate the image:
-
-```sh
+gitea-runner-lume image bootstrap --profile xcode-16
 gitea-runner-lume image adopt \
   --profile xcode-16 \
   --signing-key-file "$HOME/.config/gitea-runner-lume/image-signing.key"
@@ -74,15 +60,15 @@ gitea-runner-lume image validate --profile xcode-16
 
 ## Start the runner
 
-After image adoption and validation succeed, verify the complete installation
-and start the runner service:
+After image adoption and validation succeed, install the runner service and
+verify the complete installation:
 
 ```sh
-gitea-runner-lume doctor
 gitea-runner-lume service install
+gitea-runner-lume doctor
 ```
 
-The runner remains offline in Gitea until the service starts. If `init` was run
+The runner becomes online in Gitea when the service starts. If `init` was run
 with `--no-register`, run `gitea-runner-lume register` before these commands.
 
 Use the label in a Gitea workflow:

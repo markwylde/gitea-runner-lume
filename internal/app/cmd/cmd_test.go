@@ -44,15 +44,16 @@ func TestRootHelpExposesCompleteSafeCommandSurface(t *testing.T) {
 func TestRootPublicFlagsAndSubcommands(t *testing.T) {
 	command := NewRootCommand(context.Background())
 	tests := map[string][]string{
-		"init":           {"image", "instance", "name", "no-register", "profile", "storage", "storage-path", "token", "token-file"},
-		"register":       {"ephemeral", "instance", "labels", "name", "no-interactive", "token", "token-file"},
-		"daemon":         {"labels", "once"},
-		"status":         {"json"},
-		"doctor":         {"live-guest-profile"},
-		"cleanup":        {"apply"},
-		"image create":   {"ipsw", "profile", "unattended"},
-		"image adopt":    {"profile", "signing-key-file"},
-		"image validate": {"profile"},
+		"init":            {"image", "instance", "name", "no-register", "profile", "storage", "storage-path", "token", "token-file"},
+		"register":        {"ephemeral", "instance", "labels", "name", "no-interactive", "token", "token-file"},
+		"daemon":          {"labels", "once"},
+		"status":          {"json"},
+		"doctor":          {"live-guest-profile"},
+		"cleanup":         {"apply"},
+		"image create":    {"ipsw", "profile", "unattended"},
+		"image bootstrap": {"agent", "password", "password-file", "profile"},
+		"image adopt":     {"profile", "signing-key-file"},
+		"image validate":  {"profile"},
 	}
 	for path, flags := range tests {
 		t.Run(path, func(t *testing.T) {

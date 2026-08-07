@@ -10,6 +10,8 @@ Depends on tasks 01 and 02.
 - [x] Bind the authenticated guest's macOS version, non-root UID, architecture,
   and running agent-binary SHA-256 into the signed manifest and every session.
 - [x] Implement `image create`, `adopt`, and `validate`.
+- [x] Implement a supported, idempotent `image bootstrap` command that performs
+  every mandatory guest setup and controller public-key export step.
 - [ ] Implement and validate a non-destructive update-on-clone workflow against
   a Lume version with a proven atomic image replacement contract.
 - [x] Provision an unprivileged guest account, static agent entrypoint, pinned
