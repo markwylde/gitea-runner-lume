@@ -20,7 +20,6 @@ import (
 	"gitea.com/gitea/runner/internal/pkg/guestproto"
 	"gitea.com/gitea/runner/internal/pkg/lume"
 	"gitea.com/gitea/runner/internal/pkg/metrics"
-	"gitea.com/gitea/runner/internal/pkg/ver"
 )
 
 type preparedLumeEnvironment struct {
@@ -58,7 +57,7 @@ func prepareLumeEnvironment(ctx context.Context, cfg *config.Config, taskID int6
 	if err != nil {
 		return nil, fmt.Errorf("load image signing public key: %w", err)
 	}
-	manifest, err := lume.LoadImageManifest(profile.Manifest, imageSigningPublicKey, guestPublicKey, profile.Image, cfg.Lume.Storage, ver.Version())
+	manifest, err := lume.LoadImageManifest(profile.Manifest, imageSigningPublicKey, guestPublicKey, profile.Image, cfg.Lume.Storage)
 	if err != nil {
 		return nil, fmt.Errorf("validate signed Lume image manifest: %w", err)
 	}
@@ -194,7 +193,7 @@ func prepareLumeEnvironment(ctx context.Context, cfg *config.Config, taskID int6
 	}
 	hello := guestproto.Hello{
 		InstallationID: cfg.Lume.InstallationID, LeaseID: leaseID,
-		WorkerID: workerID, TaskID: taskID, Nonce: nonce, Revision: ver.Version(),
+		WorkerID: workerID, TaskID: taskID, Nonce: nonce, Revision: manifest.Payload.GuestRevision,
 		OS: manifest.Payload.GuestOS, Architecture: manifest.Payload.GuestArchitecture,
 		OSVersion: manifest.Payload.GuestOSVersion, AgentSHA256: manifest.Payload.GuestAgentSHA256,
 		UID: manifest.Payload.GuestUID,

@@ -13,7 +13,8 @@ A compatible base image contains:
 - a supported macOS guest on Apple Silicon;
 - a dedicated unprivileged runner account;
 - Remote Login restricted to the controller bootstrap public key;
-- a version-matched arm64 Gitea Runner Lume guest agent with recorded checksum;
+- a compatible arm64 Gitea Runner Lume guest agent with recorded revision and
+  checksum;
 - generic macOS command-line prerequisites declared by this project; and
 - a static guest-agent entrypoint owned and writable only by an administrator.
 
@@ -25,10 +26,18 @@ Password-based remote login is disabled before the image is accepted. Default
 credentials created by Lume's unattended setup are rotated or removed, and the
 controller does not retain a reusable guest administrator password.
 
+Guest compatibility is governed by the manifest schema and guest protocol
+version. The signed manifest records the exact guest revision and executable
+SHA-256, and every session authenticates that recorded identity. A controller
+upgrade may continue using an older guest revision only while those compatibility
+versions remain supported; package-version equality alone does not invalidate
+an image. An incompatible guest change increments the applicable compatibility
+version and requires a newly bootstrapped and adopted image.
+
 `image create` delegates macOS installation to supported Lume commands and
 makes long-running progress visible. `image bootstrap` turns that unattended
 VM into a runner image through SSH. It installs the exact local controller
-runner binary as the version-matched guest agent, installs and
+runner binary as the guest agent, installs and
 verifies generic Actions prerequisites, generates the guest identity inside
 the VM, installs the controller public key, pins public guest and SSH host
 identities on the controller, and removes temporary password and administrator

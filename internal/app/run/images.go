@@ -12,7 +12,6 @@ import (
 	"gitea.com/gitea/runner/internal/pkg/config"
 	"gitea.com/gitea/runner/internal/pkg/guestagent"
 	"gitea.com/gitea/runner/internal/pkg/lume"
-	"gitea.com/gitea/runner/internal/pkg/ver"
 )
 
 func ValidateLumeImages(ctx context.Context, cfg *config.Config) error {
@@ -46,7 +45,7 @@ func ValidateLumeImages(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("unsupported Lume version %q", version)
 	}
 	for name, profile := range cfg.Lume.Profiles {
-		if _, err := lume.LoadImageManifest(profile.Manifest, signingKey, guestKey, profile.Image, cfg.Lume.Storage, ver.Version()); err != nil {
+		if _, err := lume.LoadImageManifest(profile.Manifest, signingKey, guestKey, profile.Image, cfg.Lume.Storage); err != nil {
 			return fmt.Errorf("validate profile %q manifest: %w", name, err)
 		}
 		vm, err := provider.Get(ctx, profile.Image)

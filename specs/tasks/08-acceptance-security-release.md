@@ -4,8 +4,10 @@ Depends on all prior tasks.
 
 ## Checklist
 
-- [ ] Run static analysis, dependency/license audit, secret scan, fuzzers, race
-  detector, upstream tests, downstream tests, and reproducible arm64 build.
+- [x] Run macOS CI with `go vet`, selected race-enabled downstream suites,
+  upstream engine unit suites, and an arm64 build.
+- [ ] Complete the dependency/license audit, secret scan, fuzzers, full upstream
+  and downstream suites, and reproducible arm64 build proof.
 - [x] Register against a clean real Gitea using only instance URL, registration
   token, name, and Lume labels; prove correct scope and visible online runner.
 - [ ] Execute real success, step failure, timeout, cancellation, checkout,
@@ -20,8 +22,10 @@ Depends on all prior tasks.
   output, base image, and retained disks for secret canaries.
 - [x] Configure macOS-arm64-only archives, checksums, SBOM generation, a
   compatibility matrix, install runbook, security model, and rebase guide.
-- [ ] Generate provenance, sign/notarize a release with production credentials,
-  publish notices, and reproduce its checksum in the pinned environment.
+- [x] Sign and notarize releases with production credentials and publish their
+  checksums, SBOMs, and notarization records.
+- [ ] Generate release provenance, publish complete license notices, and
+  reproduce a release checksum in the pinned environment.
 
 ## Done
 
