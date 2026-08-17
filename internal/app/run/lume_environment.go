@@ -246,7 +246,7 @@ func waitForRunningVM(parent context.Context, provider *lume.Provider, id, stora
 	defer ticker.Stop()
 	for {
 		vm, err := provider.Get(ctx, id)
-		if err == nil && vm.ID == id && vm.Storage == storage && vm.State == lume.StateRunning && vm.IPAddress != "" {
+		if err == nil && vm.ID == id && vm.Storage == storage && vm.State == lume.StateRunning && vm.IPAddress != "" && vm.SSHAvailable {
 			return vm, nil
 		}
 		select {

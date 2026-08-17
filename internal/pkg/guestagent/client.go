@@ -28,10 +28,20 @@ type Client struct {
 	interrupt func()
 	diagnose  func(error) error
 	peerHello guestproto.Hello
+	guestUser string
+	guestHome string
 }
 
 func (c *Client) SetInterrupt(interrupt func())            { c.interrupt = interrupt }
 func (c *Client) SetDiagnostic(diagnose func(error) error) { c.diagnose = diagnose }
+
+// SetGuestIdentity records the VM account used for exec. The current guest
+// image replaces the process environment with the request, so HOME must be
+// sent explicitly; omitting it is not enough.
+func (c *Client) SetGuestIdentity(user, home string) {
+	c.guestUser = user
+	c.guestHome = home
+}
 
 func NewClient(input io.Reader, output io.Writer, expected guestproto.Hello, hostPrivateKey ed25519.PrivateKey, guestPublicKey ed25519.PublicKey) (*Client, error) {
 	if len(hostPrivateKey) != ed25519.PrivateKeySize || len(guestPublicKey) != ed25519.PublicKeySize {
@@ -164,7 +174,7 @@ func (c *Client) Exec(ctx context.Context, command []string, env map[string]stri
 	if env == nil {
 		env = make(map[string]string)
 	}
-	env["PATH"] = guestExecutionPath(env["PATH"])
+	applyGuestIdentity(env, c.guestUser, c.guestHome)
 	for name, value := range env {
 		if !envNamePattern.MatchString(name) {
 			return fmt.Errorf("remote command environment name %q is invalid", name)
@@ -220,18 +230,59 @@ func (c *Client) Exec(ctx context.Context, command []string, env map[string]stri
 	}
 }
 
-func guestExecutionPath(requested string) string {
-	directories := filepath.SplitList(requested)
-	seen := make(map[string]struct{}, len(directories)+5)
-	for _, directory := range directories {
-		seen[directory] = struct{}{}
+func applyGuestIdentity(env map[string]string, user, home string) {
+	stripHostIdentityEnv(env)
+	if home != "" {
+		env["HOME"] = home
 	}
-	for _, directory := range []string{"/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"} {
-		if _, exists := seen[directory]; !exists {
-			directories = append(directories, directory)
+	if user != "" {
+		env["USER"] = user
+		env["LOGNAME"] = user
+	}
+	env["PATH"] = guestExecutionPath(env["PATH"])
+}
+
+func stripHostIdentityEnv(env map[string]string) {
+	for _, name := range []string{"HOME", "USER", "LOGNAME", "TMPDIR", "TMP", "TEMP", "SSH_AUTH_SOCK"} {
+		delete(env, name)
+	}
+}
+
+func guestExecutionPath(requested string) string {
+	controllerHome, _ := os.UserHomeDir()
+	image := filepath.SplitList(container.GuestImagePath)
+	directories := make([]string, 0, len(filepath.SplitList(requested))+len(image))
+	seen := make(map[string]struct{}, cap(directories))
+	for _, directory := range filepath.SplitList(requested) {
+		if directory == "" || !filepath.IsAbs(directory) || pathIsInside(directory, controllerHome) {
+			continue
 		}
+		if _, exists := seen[directory]; exists {
+			continue
+		}
+		seen[directory] = struct{}{}
+		directories = append(directories, directory)
+	}
+	for _, directory := range image {
+		if _, exists := seen[directory]; exists {
+			continue
+		}
+		seen[directory] = struct{}{}
+		directories = append(directories, directory)
 	}
 	return strings.Join(directories, string(filepath.ListSeparator))
+}
+
+func pathIsInside(path, root string) bool {
+	if root == "" {
+		return false
+	}
+	cleanPath := filepath.Clean(path)
+	cleanRoot := filepath.Clean(root)
+	if cleanPath == cleanRoot {
+		return true
+	}
+	return strings.HasPrefix(cleanPath, cleanRoot+string(filepath.Separator))
 }
 
 func (*Client) Inspect(context.Context) (*container.Info, error) {

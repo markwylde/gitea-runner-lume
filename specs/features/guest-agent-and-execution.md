@@ -26,14 +26,30 @@ The official upstream workflow engine remains authoritative on the controller,
 as it is when orchestrating Docker. Its execution-environment interface maps
 file and process operations to the authenticated guest agent instead of a
 container. The guest creates a fresh workspace and process group for the task.
+The host still starts the agent over pinned SSH; that transport is not the
+job's GUI session. On macOS the agent waits until the guest account has a
+console Aqua session (`gui/$UID`) and then starts every workflow process in
+that domain, so GUI programs such as Electron can open windows. Aqua control
+files (plist, logs, exit status) live beside the job workspace, not inside it,
+because `actions/checkout` deletes workdir contents. SSH remains
+key-only; the console session exists so job processes are not children of
+`sshd`.
 On macOS the workspace uses canonical `/private/var/tmp` paths so Git
 credential `includeIf` rules cannot diverge through the `/var/tmp` symlink.
 Structured process environments accept bounded action-input names containing
 hyphens, while rejecting empty names, `=`, NUL, and oversized names or values.
-Every guest process retains workflow-provided `PATH` entries and also receives
-the root-owned macOS tool directories provisioned by the base image, including
-`/usr/local/bin`, so JavaScript actions can resolve the verified Node runtime
-when the controller daemon was started with launchd's restricted environment.
+Guest `PATH` is an image contract, not a copy of the controller process
+environment. Every guest process receives the root-owned macOS tool directories
+provisioned by the base image (`/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`)
+and prepends workflow `PATH` or `$GITHUB_PATH` extras so JavaScript actions can
+resolve the verified Node runtime. Entries under the controller home directory
+are dropped. The controller does not copy `os.Environ()` into a Lume guest.
+Guest processes never inherit the controller's `HOME`, `USER`, `LOGNAME`,
+`TMPDIR`, or `SSH_AUTH_SOCK`. The controller sets `HOME`, `USER`, and
+`LOGNAME` to the VM account (`/Users/lume`) on each exec so the guest agent
+in the current image, which replaces the process environment with the request,
+still presents a writable home. Tools such as npm then write under
+`/Users/lume`, not the physical Mac user's home.
 Shell, JavaScript, and composite actions available on arm64 macOS retain the
 upstream expression, environment-file, masking, cache, artifact, and reporting
 contracts.
@@ -59,6 +75,8 @@ possible; VM deletion is the final confidentiality boundary.
 ## Acceptance outcomes
 
 - Process tracing proves every workflow step and action process runs in the VM.
+- On macOS, workflow processes run in the guest account's Aqua session, not as
+  children of the SSH agent.
 - A canary scan finds task secrets only in expected guest process memory/files
   during the job and nowhere in retained host state.
 - Logs, masks, outputs, cache, artifacts, step failure, timeout, and cancellation

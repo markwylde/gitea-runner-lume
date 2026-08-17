@@ -35,6 +35,9 @@ type RemoteEnvironment struct {
 	Stdout    io.Writer
 }
 
+// GuestImagePath is the macOS tool PATH provisioned on Lume base images.
+const GuestImagePath = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
 var _ ExecutionsEnvironment = (*RemoteEnvironment)(nil)
 
 func (e *RemoteEnvironment) validate() error {
@@ -162,7 +165,7 @@ func (e *RemoteEnvironment) ToContainerPath(path string) string {
 func (e *RemoteEnvironment) GetActPath() string        { return e.ActPath }
 func (*RemoteEnvironment) GetPathVariableName() string { return "PATH" }
 func (*RemoteEnvironment) DefaultPathVariable() string {
-	return "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+	return GuestImagePath
 }
 func (*RemoteEnvironment) JoinPathVariable(paths ...string) string { return strings.Join(paths, ":") }
 func (e *RemoteEnvironment) GetRunnerContext(context.Context) map[string]any {
