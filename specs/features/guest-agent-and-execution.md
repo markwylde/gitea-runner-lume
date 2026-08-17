@@ -29,7 +29,9 @@ container. The guest creates a fresh workspace and process group for the task.
 The host still starts the agent over pinned SSH; that transport is not the
 job's GUI session. On macOS the agent waits until the guest account has a
 console Aqua session (`gui/$UID`) and then starts every workflow process in
-that domain, so GUI programs such as Electron can open windows. SSH remains
+that domain, so GUI programs such as Electron can open windows. Aqua control
+files (plist, logs, exit status) live beside the job workspace, not inside it,
+because `actions/checkout` deletes workdir contents. SSH remains
 key-only; the console session exists so job processes are not children of
 `sshd`.
 On macOS the workspace uses canonical `/private/var/tmp` paths so Git

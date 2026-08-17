@@ -414,7 +414,7 @@ func attestBaseImage(ctx context.Context, cfg *config.Config, profile config.Lum
 	var vm lume.VM
 	for time.Now().Before(deadline) {
 		vm, err = provider.Get(ctx, profile.Image)
-		if err == nil && vm.State == lume.StateRunning && vm.IPAddress != "" {
+		if err == nil && vm.State == lume.StateRunning && vm.IPAddress != "" && vm.SSHAvailable {
 			break
 		}
 		select {

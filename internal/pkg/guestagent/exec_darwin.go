@@ -8,6 +8,7 @@ package guestagent
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -81,7 +82,7 @@ var aquaExecSequence atomic.Uint64
 func runGuestCommandInAqua(ctx context.Context, executable string, args []string, workdir string, environment []string, output io.Writer) error {
 	uid := os.Getuid()
 	id := aquaExecSequence.Add(1)
-	directory, err := os.MkdirTemp(workdir, "grl-aqua-")
+	directory, err := os.MkdirTemp(aquaControlDirParent(workdir), "grl-aqua-")
 	if err != nil {
 		return err
 	}
@@ -91,7 +92,8 @@ func runGuestCommandInAqua(ctx context.Context, executable string, args []string
 	}
 
 	label := fmt.Sprintf("net.gitea.runner-lume.exec.%d.%d", os.Getpid(), id)
-	envFile := filepath.Join(directory, "env.sh")
+	envFile := filepath.Join(directory, "env.json")
+	cmdFile := filepath.Join(directory, "cmd.json")
 	runFile := filepath.Join(directory, "run.sh")
 	plistFile := filepath.Join(directory, label+".plist")
 	exitFile := filepath.Join(directory, "exit-code")
@@ -102,7 +104,10 @@ func runGuestCommandInAqua(ctx context.Context, executable string, args []string
 	if err := writeAquaEnv(envFile, environment); err != nil {
 		return err
 	}
-	if err := writeAquaRunner(runFile, envFile, workdir, executable, args, exitFile); err != nil {
+	if err := writeAquaCommand(cmdFile, executable, args); err != nil {
+		return err
+	}
+	if err := writeAquaRunner(runFile, envFile, cmdFile, workdir, exitFile); err != nil {
 		return err
 	}
 	if err := os.WriteFile(stdoutFile, nil, 0o600); err != nil {
@@ -145,6 +150,22 @@ func runGuestCommandInAqua(ctx context.Context, executable string, args []string
 			}
 			return nil
 		}
+		if aquaJobExited(domain, label) {
+			for i := 0; i < 20; i++ {
+				if data, readErr := os.ReadFile(exitFile); readErr == nil {
+					status, convErr := strconv.Atoi(strings.TrimSpace(string(data)))
+					if convErr != nil {
+						return convErr
+					}
+					if status != 0 {
+						return &exitStatusError{code: status}
+					}
+					return nil
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+			return errors.New("Aqua job exited without writing a status")
+		}
 		select {
 		case <-ctx.Done():
 			_ = exec.Command("/bin/launchctl", "bootout", domain+"/"+label).Run()
@@ -154,47 +175,72 @@ func runGuestCommandInAqua(ctx context.Context, executable string, args []string
 	}
 }
 
+func aquaControlDirParent(workdir string) string {
+	parent := filepath.Dir(workdir)
+	if !filepath.IsAbs(parent) || parent == string(filepath.Separator) {
+		return os.TempDir()
+	}
+	return parent
+}
+
+func aquaJobExited(domain, label string) bool {
+	output, err := exec.Command("/bin/launchctl", "print", domain+"/"+label).CombinedOutput()
+	if err != nil {
+		return false
+	}
+	text := string(output)
+	return strings.Contains(text, "state = not running") && strings.Contains(text, "last exit code")
+}
+
 type exitStatusError struct{ code int }
 
 func (e *exitStatusError) Error() string { return fmt.Sprintf("exit status %d", e.code) }
 func (e *exitStatusError) ExitCode() int { return e.code }
 
 func writeAquaEnv(path string, environment []string) error {
-	var body strings.Builder
+	env := make(map[string]string, len(environment))
 	for _, entry := range environment {
 		name, value, ok := strings.Cut(entry, "=")
 		if !ok {
 			continue
 		}
-		body.WriteString("export ")
-		body.WriteString(name)
-		body.WriteString("=")
-		body.WriteString(shQuote(value))
-		body.WriteByte('\n')
+		env[name] = value
 	}
-	return os.WriteFile(path, []byte(body.String()), 0o600)
-}
-
-func writeAquaRunner(path, envFile, workdir, executable string, args []string, exitFile string) error {
-	var body strings.Builder
-	body.WriteString("#!/bin/bash\nset -euo pipefail\nset -a\n")
-	body.WriteString("source ")
-	body.WriteString(shQuote(envFile))
-	body.WriteString("\nset +a\ncd ")
-	body.WriteString(shQuote(workdir))
-	body.WriteString("\nset +e\n")
-	body.WriteString(shQuote(executable))
-	for _, argument := range args {
-		body.WriteByte(' ')
-		body.WriteString(shQuote(argument))
-	}
-	body.WriteString("\nstatus=$?\nset -e\nprintf '%s\\n' \"$status\" > ")
-	body.WriteString(shQuote(exitFile))
-	body.WriteString("\nexit \"$status\"\n")
-	if err := os.WriteFile(path, []byte(body.String()), 0o700); err != nil {
+	data, err := json.Marshal(env)
+	if err != nil {
 		return err
 	}
-	return nil
+	return os.WriteFile(path, append(data, '\n'), 0o600)
+}
+
+func writeAquaCommand(path, executable string, args []string) error {
+	command := append([]string{executable}, args...)
+	data, err := json.Marshal(command)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o600)
+}
+
+func writeAquaRunner(path, envFile, cmdFile, workdir, exitFile string) error {
+	quotedExit := shQuote(exitFile)
+	script := fmt.Sprintf(`#!/bin/bash
+trap 'if [ ! -f %s ]; then printf "127\n" > %s; fi' EXIT
+/usr/bin/python3 -u - %s %s %s %s <<'PY'
+import json, os, subprocess, sys
+env_path, cmd_path, workdir, exit_path = sys.argv[1:5]
+with open(env_path, encoding="utf-8") as handle:
+    env = {str(name): str(value) for name, value in json.load(handle).items()}
+with open(cmd_path, encoding="utf-8") as handle:
+    command = json.load(handle)
+os.chdir(workdir)
+result = subprocess.run(command, env=env)
+with open(exit_path, "w", encoding="utf-8") as handle:
+    handle.write("%%d\n" %% result.returncode)
+raise SystemExit(result.returncode)
+PY
+`, quotedExit, quotedExit, shQuote(envFile), shQuote(cmdFile), shQuote(workdir), quotedExit)
+	return os.WriteFile(path, []byte(script), 0o700)
 }
 
 func aquaLaunchPlist(label, runFile, workdir, stdoutFile, stderrFile string) []byte {
