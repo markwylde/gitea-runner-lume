@@ -40,7 +40,7 @@ func TestBootstrapScriptContainsRequiredSecurityTransitions(t *testing.T) {
 		"shasum -a 256 -c", "PasswordAuthentication no", "KbdInteractiveAuthentication no",
 		"no valid Command Line Tools update was found",
 		"dseditgroup -o edit -d lume -t user admin", "autoLoginUser lume", "/etc/kcpassword",
-		"sysadminctl -resetPasswordFor lume",
+		"sysadminctl -adminUser lume", "/tmp/gitea-runner-lume.unattended-pass",
 		"/etc/gitea-runner-lume/guest.key", "/etc/gitea-runner-lume/host.pub",
 		"GRL_ROOT_BOOTSTRAP_OK", "grl-maintenance", "/sbin/shutdown -h now",
 		"/tmp/gitea-runner-lume.hosts", "git.internal.example",
@@ -55,6 +55,7 @@ func TestBootstrapScriptContainsRequiredSecurityTransitions(t *testing.T) {
 		require.NotContains(t, script, forbidden)
 	}
 	require.Less(t, strings.Index(script, "test \"$(node --version)\""), strings.Index(script, "dseditgroup -o edit -d lume"))
+	require.Less(t, strings.Index(script, "sysadminctl -adminUser lume"), strings.Index(script, "dseditgroup -o edit -d lume"))
 	require.Contains(t, bootstrapVerificationCommand("1.2.3", "git.internal.example"), "autoLoginUser")
 	require.Contains(t, bootstrapVerificationCommand("1.2.3", "git.internal.example"), "launchctl print gui/")
 }

@@ -208,6 +208,9 @@ func bootstrapImage(ctx context.Context, output io.Writer, cfg *config.Config, p
 		if _, err := passwordClient.Run(ctx, "umask 077; cat > /tmp/gitea-runner-lume.bootstrap.sh", []byte(bootstrapScript(ver.Version(), giteaHostname))); err != nil {
 			return err
 		}
+		if _, err := passwordClient.Run(ctx, "umask 077; cat > /tmp/gitea-runner-lume.unattended-pass", []byte(password+"\n")); err != nil {
+			return err
+		}
 		fmt.Fprintln(output, "installing Command Line Tools and verified Node runtime; this can take several minutes")
 		bootstrapOutput, err := passwordClient.RunWithOutput(ctx, "sudo -S -p '' /bin/bash /tmp/gitea-runner-lume.bootstrap.sh", []byte(password+"\n"), output)
 		if err != nil {
@@ -463,15 +466,24 @@ SSHD
 chmod 0644 /etc/ssh/sshd_config.d/100-gitea-runner-lume.conf
 /usr/sbin/sshd -t
 dseditgroup -o edit -a lume -t user com.apple.access_ssh
-dseditgroup -o edit -d lume -t user admin
-if id -Gn lume | tr ' ' '\n' | grep -qx admin; then
-  echo 'bootstrap: failed to remove runner user from admin group' >&2
+echo 'bootstrap: enabling console autologin for the workflow account'
+test -f /tmp/gitea-runner-lume.unattended-pass
+unattended_password="$(cat /tmp/gitea-runner-lume.unattended-pass)"
+rm -f /tmp/gitea-runner-lume.unattended-pass
+console_password="$(openssl rand -base64 32)"
+sysadmin_log="$(mktemp)"
+if ! sysadminctl -adminUser lume -adminPassword "$unattended_password" -resetPasswordFor lume -newPassword "$console_password" >"$sysadmin_log" 2>&1; then
+  cat "$sysadmin_log" >&2
+  echo 'bootstrap: failed to set the console autologin password' >&2
   exit 1
 fi
-test -f /etc/ssh/sshd_config.d/100-gitea-runner-lume.conf
-echo 'bootstrap: enabling console autologin for the workflow account'
-console_password="$(openssl rand -base64 32)"
-sysadminctl -resetPasswordFor lume -newPassword "$console_password"
+if grep -q 'not permitted' "$sysadmin_log"; then
+  cat "$sysadmin_log" >&2
+  echo 'bootstrap: failed to set the console autologin password' >&2
+  exit 1
+fi
+rm -f "$sysadmin_log"
+unset unattended_password
 GRL_CONSOLE_PASSWORD="$console_password" /usr/bin/python3 - <<'PY'
 import os
 password = os.environ["GRL_CONSOLE_PASSWORD"].encode("utf-8")
@@ -488,6 +500,12 @@ defaults write /Library/Preferences/com.apple.loginwindow autoLoginUser lume
 chmod 0600 /etc/kcpassword
 test "$(defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser)" = lume
 test -f /etc/kcpassword
+dseditgroup -o edit -d lume -t user admin
+if id -Gn lume | tr ' ' '\n' | grep -qx admin; then
+  echo 'bootstrap: failed to remove runner user from admin group' >&2
+  exit 1
+fi
+test -f /etc/ssh/sshd_config.d/100-gitea-runner-lume.conf
 rm -f /tmp/gitea-runner-lume.bootstrap /tmp/gitea-runner-lume.host.pub /tmp/gitea-runner-lume.hosts
 rm -f /tmp/gitea-runner-lume.bootstrap.sh
 sync
