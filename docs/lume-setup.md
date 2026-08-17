@@ -42,8 +42,9 @@ gitea-runner-lume image bootstrap --profile xcode-16
 
 The command streams the exact controller binary into the VM, installs Apple
 Command Line Tools and checksum-verified Node 24, generates the guest identity,
-installs the controller public key, disables password login and autologin,
-removes the runner account from `admin`, exports only public guest identities,
+installs the controller public key, disables SSH password login, enables
+console autologin for the workflow account, removes that account from
+`admin`, exports only public guest identities,
 and shuts down cleanly. It then boots once more to prove that key-only access
 and the hardened state persisted. Rerunning the command is safe.
 

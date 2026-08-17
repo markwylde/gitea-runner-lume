@@ -25,6 +25,9 @@ secret, or prior runner registration file.
 Password-based remote login is disabled before the image is accepted. Default
 credentials created by Lume's unattended setup are rotated or removed, and the
 controller does not retain a reusable guest administrator password.
+The workflow account is console-autologged so workers have an Aqua session.
+That autologin password is random, kept only in the guest, never returned to
+the controller, and cannot be used for SSH.
 
 Guest compatibility is governed by the manifest schema and guest protocol
 version. The signed manifest records the exact guest revision and executable

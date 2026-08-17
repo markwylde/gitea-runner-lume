@@ -371,6 +371,8 @@ func bootstrapVerificationCommand(version, giteaHostname string) string {
 	return "set -eu; export PATH='/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'; " +
 		"test \"$(id -u)\" -gt 0; " +
 		"if id -Gn | tr ' ' '\\n' | grep -qx admin; then echo 'runner user is still an administrator' >&2; exit 1; fi; " +
+		"test \"$(defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser)\" = lume; " +
+		"i=0; while ! launchctl print gui/$(id -u) >/dev/null 2>&1; do i=$((i+1)); test \"$i\" -lt 60; sleep 2; done; " +
 		"test \"$(/usr/local/bin/gitea-runner-lume version)\" = 'gitea-runner-lume " + version + "'; " +
 		"test \"$(node --version)\" = 'v" + bootstrapNodeVersion + "'; " +
 		"xcrun --find git >/dev/null; " +
@@ -467,10 +469,25 @@ if id -Gn lume | tr ' ' '\n' | grep -qx admin; then
   exit 1
 fi
 test -f /etc/ssh/sshd_config.d/100-gitea-runner-lume.conf
-defaults delete /Library/Preferences/com.apple.loginwindow autoLoginUser >/dev/null 2>&1 || true
-rm -f /etc/kcpassword
-dscl . -delete /Users/lume dsAttrTypeNative:ShadowHashData >/dev/null 2>&1 || true
-dscl . -delete /Users/lume AuthenticationAuthority >/dev/null 2>&1 || true
+echo 'bootstrap: enabling console autologin for the workflow account'
+console_password="$(openssl rand -base64 32)"
+sysadminctl -resetPasswordFor lume -newPassword "$console_password"
+GRL_CONSOLE_PASSWORD="$console_password" /usr/bin/python3 - <<'PY'
+import os
+password = os.environ["GRL_CONSOLE_PASSWORD"].encode("utf-8")
+key = bytes([125, 137, 82, 35, 210, 188, 221, 234, 163, 185, 31])
+encoded = bytearray(b ^ key[i % len(key)] for i, b in enumerate(password + b"\x00"))
+pad = (12 - len(encoded) % 12) % 12
+encoded.extend(key[len(encoded) % len(key)] for _ in range(pad))
+with open("/etc/kcpassword", "wb") as handle:
+    handle.write(encoded)
+os.chmod("/etc/kcpassword", 0o600)
+PY
+unset console_password GRL_CONSOLE_PASSWORD
+defaults write /Library/Preferences/com.apple.loginwindow autoLoginUser lume
+chmod 0600 /etc/kcpassword
+test "$(defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser)" = lume
+test -f /etc/kcpassword
 rm -f /tmp/gitea-runner-lume.bootstrap /tmp/gitea-runner-lume.host.pub /tmp/gitea-runner-lume.hosts
 rm -f /tmp/gitea-runner-lume.bootstrap.sh
 sync

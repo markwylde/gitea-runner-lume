@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -21,6 +22,7 @@ import (
 	"sync"
 	"syscall"
 
+	"gitea.com/gitea/runner/act/container"
 	"gitea.com/gitea/runner/internal/pkg/guestproto"
 )
 
@@ -70,6 +72,9 @@ func (s *Server) Serve(ctx context.Context) error {
 	guestHello, err = guestproto.SignHello(guestHello, s.guestPrivateKey)
 	if err != nil {
 		return fmt.Errorf("sign guest hello: %w", err)
+	}
+	if err := waitForConsoleGUISession(ctx); err != nil {
+		return err
 	}
 	if err := s.write("guest_hello", guestHello); err != nil {
 		return err
@@ -273,39 +278,21 @@ func (s *Server) exec(ctx context.Context, message guestproto.Message) error {
 	if err != nil {
 		return err
 	}
-	environment := make([]string, 0, len(request.Env))
-	for name, value := range request.Env {
-		if !envNamePattern.MatchString(name) || len(value) > 4*1024*1024 || strings.IndexByte(value, 0) >= 0 {
-			return errors.New("guest command environment is invalid")
-		}
-		environment = append(environment, name+"="+value)
+	environment, err := guestProcessEnv(request.Env)
+	if err != nil {
+		return err
 	}
 	executable, err := resolveExecutable(request.Command[0], request.Env["PATH"])
 	if err != nil {
 		return s.write("exec_result", guestproto.ExecResult{ExitCode: -1, Error: boundedError(err)})
 	}
-	command := exec.CommandContext(ctx, executable, request.Command[1:]...)
-	command.Dir = workdir
-	command.Env = environment
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	output := &eventWriter{server: s}
-	command.Stdout, command.Stderr = output, output
-	if err := command.Start(); err != nil {
-		return s.write("exec_result", guestproto.ExecResult{ExitCode: -1, Error: boundedError(err)})
-	}
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
-	select {
-	case err = <-done:
-	case <-ctx.Done():
-		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
-		err = <-done
-	}
+	err = guestCommandRunner(ctx, executable, request.Command[1:], workdir, environment, output)
 	result := guestproto.ExecResult{}
 	if err != nil {
-		var exitError *exec.ExitError
-		if errors.As(err, &exitError) {
-			result.ExitCode = exitError.ExitCode()
+		var coder interface{ ExitCode() int }
+		if errors.As(err, &coder) {
+			result.ExitCode = coder.ExitCode()
 		} else {
 			result.ExitCode = -1
 			result.Error = boundedError(err)
@@ -314,12 +301,59 @@ func (s *Server) exec(ctx context.Context, message guestproto.Message) error {
 	return s.write("exec_result", result)
 }
 
+var guestCommandRunner = runGuestCommandDirect
+
+func runGuestCommandDirect(ctx context.Context, executable string, args []string, workdir string, environment []string, output io.Writer) error {
+	command := exec.CommandContext(ctx, executable, args...)
+	command.Dir = workdir
+	command.Env = environment
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.Stdout, command.Stderr = output, output
+	if err := command.Start(); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- command.Wait() }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		return <-done
+	}
+}
+
+func guestProcessEnv(requested map[string]string) ([]string, error) {
+	env := make(map[string]string, len(requested)+4)
+	for name, value := range requested {
+		if !envNamePattern.MatchString(name) || len(value) > 4*1024*1024 || strings.IndexByte(value, 0) >= 0 {
+			return nil, errors.New("guest command environment is invalid")
+		}
+		env[name] = value
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		env["HOME"] = home
+	}
+	if current, err := user.Current(); err == nil && current.Username != "" {
+		env["USER"] = current.Username
+		env["LOGNAME"] = current.Username
+	}
+	if strings.TrimSpace(env["PATH"]) == "" {
+		env["PATH"] = container.GuestImagePath
+	}
+	environment := make([]string, 0, len(env))
+	for name, value := range env {
+		environment = append(environment, name+"="+value)
+	}
+	return environment, nil
+}
+
 func resolveExecutable(name, pathValue string) (string, error) {
 	if strings.ContainsRune(name, filepath.Separator) {
 		return name, nil
 	}
 	if pathValue == "" {
-		pathValue = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+		pathValue = container.GuestImagePath
 	}
 	for _, directory := range filepath.SplitList(pathValue) {
 		if !filepath.IsAbs(directory) {

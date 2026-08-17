@@ -16,8 +16,9 @@ Depends on tasks 01 and 02.
   a Lume version with a proven atomic image replacement contract.
 - [x] Provision an unprivileged guest account, static agent entrypoint, pinned
   SSH host key, controller public key, and generic Actions prerequisites.
-- [x] Disable password login, default credentials, shared folders, clipboard,
-  display, devices, and stale runner registration.
+- [x] Disable SSH password login, default credentials, shared folders, clipboard,
+  host-visible display, devices, and stale runner registration. Enable console
+  autologin for the unprivileged workflow account.
 - [ ] Scan for registration, API, webhook, project, signing, and canary secrets.
 - [x] Validate boot, address, host identity, attestation, tools, clean workspace,
   shutdown, mutation evidence, and stopped state.

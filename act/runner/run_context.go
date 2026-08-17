@@ -393,11 +393,17 @@ func (rc *RunContext) startHostEnvironment() common.Executor {
 				rc.Env["RUNNER_"+strings.ToUpper(k)] = v
 			}
 		}
-		for _, env := range os.Environ() {
-			if k, v, ok := strings.Cut(env, "="); ok {
-				// don't override
-				if _, ok := rc.Env[k]; !ok {
-					rc.Env[k] = v
+		// Host-process environment belongs only to true host execution. Lume
+		// guests must not inherit controller HOME, USER, TMPDIR, or SSH agent
+		// sockets; npm and similar tools would then write to the physical Mac
+		// user's paths inside the VM.
+		if rc.Config.ExecutionEnvironmentFactory == nil {
+			for _, env := range os.Environ() {
+				if k, v, ok := strings.Cut(env, "="); ok {
+					// don't override
+					if _, ok := rc.Env[k]; !ok {
+						rc.Env[k] = v
+					}
 				}
 			}
 		}

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -1358,4 +1359,45 @@ func TestRunContextWithGithubEnvRunnerValues(t *testing.T) {
 	assert.Equal(t, "self-hosted", env["RUNNER_ENVIRONMENT"])
 	assert.Equal(t, "/workspace/owner", env["RUNNER_WORKSPACE"])
 	assert.Equal(t, "1", env["RUNNER_DEBUG"])
+}
+
+func TestStartHostEnvironmentSkipsControllerEnvForRemoteFactory(t *testing.T) {
+	t.Setenv("UNIQUE_CONTROLLER_ENV", "should-not-leak")
+	cache := t.TempDir()
+	workdir := t.TempDir()
+	hostPath := filepath.Join(cache, "hostexecutor")
+	require.NoError(t, os.MkdirAll(hostPath, 0o755))
+
+	rc := &RunContext{
+		Config: &Config{
+			ActionCacheDir: cache,
+			Workdir:        workdir,
+			ExecutionEnvironmentFactory: func(_ context.Context, input ExecutionEnvironmentInput) (container.ExecutionsEnvironment, error) {
+				return &container.HostEnvironment{
+					Path: hostPath, TmpDir: input.TmpDir, ToolCache: input.ToolCache,
+					Workdir: input.Workdir, ActPath: input.ActPath,
+				}, nil
+			},
+		},
+		Env:         map[string]string{"CI": "true"},
+		EventJSON:   "{}",
+		StepResults: map[string]*model.StepResult{},
+	}
+	require.NoError(t, rc.startHostEnvironment()(context.Background()))
+	require.Equal(t, "true", rc.Env["CI"])
+	require.NotContains(t, rc.Env, "UNIQUE_CONTROLLER_ENV")
+	require.NotContains(t, rc.Env, "HOME")
+}
+
+func TestStartHostEnvironmentCopiesControllerEnvForHostExecution(t *testing.T) {
+	t.Setenv("UNIQUE_CONTROLLER_ENV", "host-mode-inherits")
+	cache := t.TempDir()
+	rc := &RunContext{
+		Config:      &Config{ActionCacheDir: cache, Workdir: t.TempDir()},
+		Env:         map[string]string{},
+		EventJSON:   "{}",
+		StepResults: map[string]*model.StepResult{},
+	}
+	require.NoError(t, rc.startHostEnvironment()(context.Background()))
+	require.Equal(t, "host-mode-inherits", rc.Env["UNIQUE_CONTROLLER_ENV"])
 }

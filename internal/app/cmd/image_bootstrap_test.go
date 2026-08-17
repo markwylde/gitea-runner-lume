@@ -39,17 +39,24 @@ func TestBootstrapScriptContainsRequiredSecurityTransitions(t *testing.T) {
 		"gitea-runner-lume 1.2.3", bootstrapNodeVersion, bootstrapNodeSHA256,
 		"shasum -a 256 -c", "PasswordAuthentication no", "KbdInteractiveAuthentication no",
 		"no valid Command Line Tools update was found",
-		"dseditgroup -o edit -d lume -t user admin", "ShadowHashData", "AuthenticationAuthority",
+		"dseditgroup -o edit -d lume -t user admin", "autoLoginUser lume", "/etc/kcpassword",
+		"sysadminctl -resetPasswordFor lume",
 		"/etc/gitea-runner-lume/guest.key", "/etc/gitea-runner-lume/host.pub",
 		"GRL_ROOT_BOOTSTRAP_OK", "grl-maintenance", "/sbin/shutdown -h now",
 		"/tmp/gitea-runner-lume.hosts", "git.internal.example",
 	} {
 		require.Contains(t, script, required)
 	}
-	for _, forbidden := range []string{"image-signing.key", ".runner", "GITEA_RUNNER_REGISTRATION_TOKEN", "shared-dir"} {
+	for _, forbidden := range []string{
+		"image-signing.key", ".runner", "GITEA_RUNNER_REGISTRATION_TOKEN", "shared-dir",
+		"defaults delete /Library/Preferences/com.apple.loginwindow autoLoginUser",
+		"dscl . -delete /Users/lume dsAttrTypeNative:ShadowHashData",
+	} {
 		require.NotContains(t, script, forbidden)
 	}
 	require.Less(t, strings.Index(script, "test \"$(node --version)\""), strings.Index(script, "dseditgroup -o edit -d lume"))
+	require.Contains(t, bootstrapVerificationCommand("1.2.3", "git.internal.example"), "autoLoginUser")
+	require.Contains(t, bootstrapVerificationCommand("1.2.3", "git.internal.example"), "launchctl print gui/")
 }
 
 func TestRegisteredGiteaHostnameAcceptsOnlySafeHostnamesAndIPs(t *testing.T) {

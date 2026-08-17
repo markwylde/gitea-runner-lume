@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"gitea.com/gitea/runner/act/container"
 	"gitea.com/gitea/runner/internal/pkg/guestproto"
 
 	"github.com/stretchr/testify/require"
@@ -89,6 +90,78 @@ func TestGuestExecutionPathSuppliesToolsWhenRequestOmitsPath(t *testing.T) {
 		[]string{"/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"},
 		filepath.SplitList(guestExecutionPath("")),
 	)
+	require.Equal(t, container.GuestImagePath, guestExecutionPath(""))
+}
+
+func TestGuestExecutionPathDropsControllerHomeAndKeepsWorkflowExtras(t *testing.T) {
+	home, err := os.UserHomeDir()
+	require.NoError(t, err)
+	requested := strings.Join([]string{
+		filepath.Join(home, ".local/bin"),
+		"/opt/action/bin",
+		"/usr/bin",
+		"relative/bin",
+	}, string(filepath.ListSeparator))
+	require.Equal(t, []string{
+		"/opt/action/bin", "/usr/bin", "/usr/local/bin", "/bin", "/usr/sbin", "/sbin",
+	}, filepath.SplitList(guestExecutionPath(requested)))
+}
+
+func TestGuestProcessEnvReplacesControllerHomeWithGuestIdentity(t *testing.T) {
+	environment, err := guestProcessEnv(map[string]string{
+		"HOME": "/Users/mark",
+		"USER": "mark",
+		"CI":   "true",
+	})
+	require.NoError(t, err)
+	values := map[string]string{}
+	for _, entry := range environment {
+		name, value, ok := strings.Cut(entry, "=")
+		require.True(t, ok)
+		values[name] = value
+	}
+	home, err := os.UserHomeDir()
+	require.NoError(t, err)
+	require.Equal(t, home, values["HOME"])
+	require.Equal(t, "true", values["CI"])
+	require.Equal(t, container.GuestImagePath, values["PATH"])
+}
+
+func TestStripHostIdentityEnvDropsControllerHome(t *testing.T) {
+	env := map[string]string{
+		"HOME":          "/Users/mark",
+		"USER":          "mark",
+		"LOGNAME":       "mark",
+		"TMPDIR":        "/var/folders/xx/T",
+		"SSH_AUTH_SOCK": "/private/tmp/com.apple.launchd.xxx/Listeners",
+		"CI":            "true",
+		"PATH":          "/usr/bin",
+	}
+	stripHostIdentityEnv(env)
+	require.NotContains(t, env, "HOME")
+	require.NotContains(t, env, "USER")
+	require.NotContains(t, env, "LOGNAME")
+	require.NotContains(t, env, "TMPDIR")
+	require.NotContains(t, env, "SSH_AUTH_SOCK")
+	require.Equal(t, "true", env["CI"])
+	require.Equal(t, "/usr/bin", env["PATH"])
+}
+
+func TestClientReplacesControllerHomeWithGuestIdentity(t *testing.T) {
+	env := map[string]string{
+		"HOME": "/Users/mark",
+		"USER": "mark",
+		"CI":   "true",
+		"PATH": "/opt/action/bin",
+	}
+	applyGuestIdentity(env, "lume", "/Users/lume")
+	require.Equal(t, "/Users/lume", env["HOME"])
+	require.Equal(t, "lume", env["USER"])
+	require.Equal(t, "lume", env["LOGNAME"])
+	require.Equal(t, "true", env["CI"])
+	require.Equal(t, []string{
+		"/opt/action/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin",
+	}, filepath.SplitList(env["PATH"]))
 }
 
 func TestServerRejectsPathEscapeBeforeWriting(t *testing.T) {

@@ -89,6 +89,7 @@ func StartSSHSession(ctx context.Context, config SSHConfig, hello guestproto.Hel
 		_ = command.Wait()
 		return nil, fmt.Errorf("authenticate SSH guest session: %w: %s", err, stderr.String())
 	}
+	client.SetGuestIdentity(config.User, "/Users/"+config.User)
 	client.SetInterrupt(func() {
 		_ = stdin.Close()
 		if command.Process != nil {

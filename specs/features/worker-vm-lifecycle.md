@@ -17,11 +17,13 @@ The controller never runs more than two macOS guests concurrently because that
 is Lume's documented platform ceiling. A lower configured or resource-derived
 limit takes precedence.
 
-Workers run headlessly. Host directory sharing, USB devices, arbitrary disks,
-clipboard integration, and interactive display launch are disabled. The guest
-uses ordinary virtual networking and must reach Gitea and approved dependency
-destinations according to the operator's network policy; the controller does
-not silently bypass that policy.
+Workers run without a host-visible display. Host directory sharing, USB
+devices, arbitrary disks, clipboard integration, and interactive display
+launch are disabled. Inside the guest the workflow account is
+console-logged-in so Aqua exists; the controller never attaches that display.
+The guest uses ordinary virtual networking and must reach Gitea and approved
+dependency destinations according to the operator's network policy; the
+controller does not silently bypass that policy.
 
 Readiness requires Lume state, a discovered guest address, a matching SSH host
 identity, and a successful authenticated bootstrap probe. Each phase has a
