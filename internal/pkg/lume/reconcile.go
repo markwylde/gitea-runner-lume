@@ -84,7 +84,7 @@ func Reconcile(ctx context.Context, store *LeaseStore, provider *Provider, insta
 		if err == nil {
 			err = store.Save(lease)
 		}
-		if err == nil {
+		if err == nil && vm.State != StateStopped {
 			if stopErr := provider.Stop(ctx, lease.Ownership.VMID, false); stopErr != nil {
 				if forceErr := provider.Stop(ctx, lease.Ownership.VMID, true); forceErr != nil {
 					err = fmt.Errorf("stop owned VM: %w", errors.Join(stopErr, forceErr))
