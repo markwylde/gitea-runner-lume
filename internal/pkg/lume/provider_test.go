@@ -45,7 +45,9 @@ func TestProviderUsesStructuredArgumentsAndStrictOutput(t *testing.T) {
 	runner := &fakeRunner{results: []Result{
 		{Stdout: []byte(stoppedVMJSON)},
 		{Stdout: []byte(runningVMJSON)},
-		{}, {}, {},
+		{}, {},
+		// Stop inspects the VM first and only issues the stop when it is running.
+		{Stdout: []byte(runningVMJSON)}, {},
 	}}
 	provider, err := NewProvider("/opt/homebrew/bin/lume", "default", time.Second, runner)
 	require.NoError(t, err)
@@ -59,7 +61,7 @@ func TestProviderUsesStructuredArgumentsAndStrictOutput(t *testing.T) {
 	require.NoError(t, provider.Clone(t.Context(), "base-image", "worker-b"))
 	require.NoError(t, provider.Start(t.Context(), "worker-b"))
 	require.NoError(t, provider.Stop(t.Context(), "worker-b", true))
-	require.Equal(t, []string{"/opt/homebrew/bin/lume", "stop", "worker-b", "--storage", "default"}, runner.calls[4])
+	require.Equal(t, []string{"/opt/homebrew/bin/lume", "stop", "worker-b", "--storage", "default"}, runner.calls[5])
 	for _, call := range runner.calls {
 		require.False(t, slices.Contains(call, "sh"))
 	}
@@ -214,4 +216,15 @@ func TestDeleteOwnedStillFailsWhenPresentVMCannotBeInspected(t *testing.T) {
 	provider, err := NewProvider("/opt/homebrew/bin/lume", "default", time.Second, runner)
 	require.NoError(t, err)
 	require.ErrorContains(t, provider.DeleteOwned(t.Context(), evidence, evidence.InstallationID), "inspect VM before deletion")
+}
+
+func TestStopIsANoOpForAnAlreadyStoppedVM(t *testing.T) {
+	// Lume exits on SIGINT when told to stop a VM that is not running, so the
+	// runner must not issue the command in the first place.
+	runner := &fakeRunner{results: []Result{{Stdout: []byte(stoppedVMJSON)}}}
+	provider, err := NewProvider("/opt/homebrew/bin/lume", "default", time.Second, runner)
+	require.NoError(t, err)
+	require.NoError(t, provider.Stop(t.Context(), "worker-a", false))
+	require.Len(t, runner.calls, 1)
+	require.False(t, slices.Contains(runner.calls[0], "stop"))
 }

@@ -222,6 +222,12 @@ func (p *Provider) Stop(ctx context.Context, id string, force bool) error {
 	if !validIdentifier(id) {
 		return errors.New("VM identifier is invalid")
 	}
+	// Lume terminates itself with SIGINT when asked to stop a VM that is not
+	// running, which surfaces as a signal exit the runner cannot distinguish
+	// from a real failure. Stopping an already-stopped VM is a no-op instead.
+	if vm, err := p.Get(ctx, id); err == nil && vm.State == StateStopped {
+		return nil
+	}
 	args := []string{"stop", id, "--storage", p.storage}
 	_ = force // Lume 0.4 stop has no force flag; process termination is separate.
 	_, err := p.run(ctx, args...)
