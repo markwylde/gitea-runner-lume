@@ -164,3 +164,54 @@ func TestProviderRejectsStorageMismatchWithoutDelete(t *testing.T) {
 	require.Error(t, provider.DeleteOwned(t.Context(), evidence, evidence.InstallationID))
 	require.Len(t, runner.calls, 1)
 }
+
+func TestProviderIgnoresLumeLogLinesInCommandOutput(t *testing.T) {
+	const logLine = "[2026-09-06T21:39:33Z] ERROR: Failed to get VM details storage=home vmName=worker-a\n"
+	runner := &fakeRunner{results: []Result{
+		{Stdout: []byte(logLine + stoppedVMJSON)},
+		{Stdout: []byte(logLine + runningVMJSON + "\n" + logLine)},
+	}}
+	provider, err := NewProvider("/opt/homebrew/bin/lume", "default", time.Second, runner)
+	require.NoError(t, err)
+
+	vms, err := provider.List(t.Context())
+	require.NoError(t, err)
+	require.Len(t, vms, 1)
+
+	vm, err := provider.Get(t.Context(), "worker-a")
+	require.NoError(t, err)
+	require.Equal(t, StateRunning, vm.State)
+}
+
+func TestProviderStillRejectsTrailingGarbageAfterPayload(t *testing.T) {
+	runner := &fakeRunner{results: []Result{{Stdout: []byte(stoppedVMJSON + "\nnot json\n")}}}
+	provider, err := NewProvider("/opt/homebrew/bin/lume", "default", time.Second, runner)
+	require.NoError(t, err)
+	_, err = provider.List(t.Context())
+	require.Error(t, err)
+}
+
+func TestDeleteOwnedSucceedsWhenVMAlreadyGone(t *testing.T) {
+	evidence := validLease().Ownership
+	runner := &fakeRunner{results: []Result{
+		{Stdout: []byte("[2026-09-06T21:39:33Z] ERROR: Failed to get VM details vmName=worker-a\n")},
+		{Stdout: []byte("[]")},
+	}}
+	provider, err := NewProvider("/opt/homebrew/bin/lume", "default", time.Second, runner)
+	require.NoError(t, err)
+	require.NoError(t, provider.DeleteOwned(t.Context(), evidence, evidence.InstallationID))
+	for _, call := range runner.calls {
+		require.False(t, slices.Contains(call, "delete"))
+	}
+}
+
+func TestDeleteOwnedStillFailsWhenPresentVMCannotBeInspected(t *testing.T) {
+	evidence := validLease().Ownership
+	runner := &fakeRunner{results: []Result{
+		{Stdout: []byte("garbage")},
+		{Stdout: []byte(stoppedVMJSON)},
+	}}
+	provider, err := NewProvider("/opt/homebrew/bin/lume", "default", time.Second, runner)
+	require.NoError(t, err)
+	require.ErrorContains(t, provider.DeleteOwned(t.Context(), evidence, evidence.InstallationID), "inspect VM before deletion")
+}
