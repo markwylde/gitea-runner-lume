@@ -223,9 +223,13 @@ func writeAquaCommand(path, executable string, args []string) error {
 }
 
 func writeAquaRunner(path, envFile, cmdFile, workdir, exitFile string) error {
+	// The agent polls for the exit file and reads it as soon as it exists, so
+	// the status is written beside it and renamed into place: the file never
+	// exists without its whole status in it.
 	quotedExit := shQuote(exitFile)
+	quotedPartial := shQuote(exitFile + ".partial")
 	script := fmt.Sprintf(`#!/bin/bash
-trap 'if [ ! -f %s ]; then printf "127\n" > %s; fi' EXIT
+trap 'if [ ! -f %s ]; then printf "127\n" > %s && /bin/mv -f %s %s; fi' EXIT
 /usr/bin/python3 -u - %s %s %s %s <<'PY'
 import json, os, subprocess, sys
 env_path, cmd_path, workdir, exit_path = sys.argv[1:5]
@@ -235,11 +239,13 @@ with open(cmd_path, encoding="utf-8") as handle:
     command = json.load(handle)
 os.chdir(workdir)
 result = subprocess.run(command, env=env)
-with open(exit_path, "w", encoding="utf-8") as handle:
+partial_path = exit_path + ".partial"
+with open(partial_path, "w", encoding="utf-8") as handle:
     handle.write("%%d\n" %% result.returncode)
+os.replace(partial_path, exit_path)
 raise SystemExit(result.returncode)
 PY
-`, quotedExit, quotedExit, shQuote(envFile), shQuote(cmdFile), shQuote(workdir), quotedExit)
+`, quotedExit, quotedPartial, quotedPartial, quotedExit, shQuote(envFile), shQuote(cmdFile), shQuote(workdir), quotedExit)
 	return os.WriteFile(path, []byte(script), 0o700)
 }
 
