@@ -7,6 +7,8 @@ package guestagent
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -66,4 +68,50 @@ func TestDarwinAquaProbeUsesLaunchctlManagername(t *testing.T) {
 	name, err := launchctlOutput("managername")
 	require.NoError(t, err)
 	require.NotEmpty(t, strings.TrimSpace(name))
+}
+
+// The agent reads the exit file the moment it exists, so the file must never
+// exist without its whole status: a run that exits leaves exactly its status
+// there and nothing half-written beside it.
+func TestAquaRunnerPublishesTheExitStatusWhole(t *testing.T) {
+	directory := t.TempDir()
+	workdir := filepath.Join(directory, "work")
+	require.NoError(t, os.Mkdir(workdir, 0o700))
+	envFile := filepath.Join(directory, "env.json")
+	cmdFile := filepath.Join(directory, "cmd.json")
+	runFile := filepath.Join(directory, "run.sh")
+	exitFile := filepath.Join(directory, "exit-code")
+	require.NoError(t, writeAquaEnv(envFile, []string{"PATH=/usr/bin:/bin"}))
+	require.NoError(t, writeAquaCommand(cmdFile, "/bin/sh", []string{"-c", "exit 3"}))
+	require.NoError(t, writeAquaRunner(runFile, envFile, cmdFile, workdir, exitFile))
+
+	_ = exec.Command("/bin/bash", runFile).Run()
+
+	data, err := os.ReadFile(exitFile)
+	require.NoError(t, err)
+	require.Equal(t, "3\n", string(data))
+	_, err = os.Stat(exitFile + ".partial")
+	require.True(t, os.IsNotExist(err), "no partial status is left behind")
+
+	script, err := os.ReadFile(runFile)
+	require.NoError(t, err)
+	require.Contains(t, string(script), "os.replace(partial_path, exit_path)")
+}
+
+// A run that fails before the command starts still publishes a status, and
+// publishes it the same way.
+func TestAquaRunnerFallbackStatusIsPublishedWhole(t *testing.T) {
+	directory := t.TempDir()
+	runFile := filepath.Join(directory, "run.sh")
+	exitFile := filepath.Join(directory, "exit-code")
+	missing := filepath.Join(directory, "missing.json")
+	require.NoError(t, writeAquaRunner(runFile, missing, missing, directory, exitFile))
+
+	_ = exec.Command("/bin/bash", runFile).Run()
+
+	data, err := os.ReadFile(exitFile)
+	require.NoError(t, err)
+	require.Equal(t, "127\n", string(data))
+	_, err = os.Stat(exitFile + ".partial")
+	require.True(t, os.IsNotExist(err), "no partial status is left behind")
 }
