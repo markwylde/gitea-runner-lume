@@ -53,6 +53,18 @@ macOS requires an administrator account, so bootstrap creates a hidden
 is restricted to the non-administrator `lume` user; the controller retains no
 administrator credential.
 
+To build Apple platforms or sign with `xcodebuild`, install full Xcode during
+this first bootstrap by passing a local, Apple-signed bundle:
+
+```sh
+gitea-runner-lume image bootstrap --profile macos --xcode /Applications/Xcode.app
+```
+
+The guest's macOS must satisfy that Xcode's `LSMinimumSystemVersion`. Xcode can
+only be added to a freshly created VM, because bootstrap removes the
+administrator access it needs. Signing certificates never go in the image:
+import them per job from Actions secrets into a temporary keychain.
+
 Lume's documented unattended password is used only during initial bootstrap.
 For a custom unattended password, place it in an owner-only file and pass
 `--password-file PATH`. Do not use `--password` in automation because process

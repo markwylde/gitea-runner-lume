@@ -41,6 +41,7 @@ type imageBootstrapOptions struct {
 	password     string
 	passwordFile string
 	agent        string
+	xcode        string
 }
 
 func loadImageBootstrapCmd(ctx context.Context, configFile *string) *cobra.Command {
@@ -62,13 +63,18 @@ func loadImageBootstrapCmd(ctx context.Context, configFile *string) *cobra.Comma
 			if err != nil {
 				return err
 			}
-			return bootstrapImage(ctx, command.OutOrStdout(), cfg, profile, options.agent, password)
+			xcode, err := validateXcodeBundle(ctx, options.xcode)
+			if err != nil {
+				return err
+			}
+			return bootstrapImage(ctx, command.OutOrStdout(), cfg, profile, options.agent, password, xcode)
 		},
 	}
 	command.Flags().StringVar(&options.profile, "profile", "", "configured profile to bootstrap")
 	command.Flags().StringVar(&options.passwordFile, "password-file", "", "owner-only file containing the temporary unattended VM password")
 	command.Flags().StringVar(&options.password, "password", "", "temporary unattended VM password (observable; prefer --password-file)")
 	command.Flags().StringVar(&options.agent, "agent", "", "runner binary to install in the guest (defaults to this executable)")
+	command.Flags().StringVar(&options.xcode, "xcode", "", "Apple-signed Xcode.app to install as the guest's developer directory (initial bootstrap only)")
 	_ = command.MarkFlagRequired("profile")
 	return command
 }
@@ -101,7 +107,7 @@ func bootstrapPassword(options imageBootstrapOptions) (string, error) {
 	return password, nil
 }
 
-func bootstrapImage(ctx context.Context, output io.Writer, cfg *config.Config, profile config.LumeProfile, agentPath, password string) error {
+func bootstrapImage(ctx context.Context, output io.Writer, cfg *config.Config, profile config.LumeProfile, agentPath, password, xcode string) error {
 	if cfg.Lume.SSHUser != "lume" {
 		return errors.New("image bootstrap currently requires Lume's unattended guest user named lume")
 	}
@@ -187,11 +193,23 @@ func bootstrapImage(ctx context.Context, output io.Writer, cfg *config.Config, p
 
 	// A rerun after hardening cannot use the removed password, so prove the
 	// installed controller key first and only run mutation when it is absent.
-	_, keyErr := keyClient.Run(ctx, bootstrapVerificationCommand(ver.Version(), giteaHostname), nil)
+	_, keyErr := keyClient.Run(ctx, bootstrapVerificationCommand(ver.Version(), giteaHostname, false), nil)
 	if presented := keyClient.HostKey(); pinnedHostKey != nil && (presented == nil || !bytes.Equal(pinnedHostKey.Marshal(), presented.Marshal())) {
 		return errors.New("guest SSH host key does not match the pinned base image identity")
 	}
+	if keyErr == nil && xcode != "" {
+		// The hardened guest has no administrator left to install with.
+		if _, err := keyClient.Run(ctx, xcodeVerificationCommand(true), nil); err != nil {
+			return errors.New("--xcode needs a freshly created VM: this guest is already hardened without Xcode")
+		}
+	}
 	if keyErr != nil {
+		if xcode != "" {
+			fmt.Fprintf(output, "uploading %s; this can take several minutes\n", xcode)
+			if err := uploadXcodeBundle(ctx, passwordClient, xcode); err != nil {
+				return err
+			}
+		}
 		fmt.Fprintln(output, "installing version-matched guest agent")
 		if _, err := passwordClient.Run(ctx, "umask 077; cat > /tmp/gitea-runner-lume.bootstrap", agent); err != nil {
 			return err
@@ -243,7 +261,7 @@ func bootstrapImage(ctx context.Context, output io.Writer, cfg *config.Config, p
 		}
 	}
 
-	verification, err := keyClient.Run(ctx, bootstrapVerificationCommand(ver.Version(), giteaHostname), nil)
+	verification, err := keyClient.Run(ctx, bootstrapVerificationCommand(ver.Version(), giteaHostname, xcode != ""), nil)
 	if err != nil {
 		return fmt.Errorf("verify key-only guest bootstrap: %w", err)
 	}
@@ -370,7 +388,7 @@ func writePublicIdentity(path string, content []byte) error {
 	return writeNewFile(path, content, 0o644)
 }
 
-func bootstrapVerificationCommand(version, giteaHostname string) string {
+func bootstrapVerificationCommand(version, giteaHostname string, requireXcode bool) string {
 	return "set -eu; export PATH='/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'; " +
 		"test \"$(id -u)\" -gt 0; " +
 		"if id -Gn | tr ' ' '\\n' | grep -qx admin; then echo 'runner user is still an administrator' >&2; exit 1; fi; " +
@@ -379,6 +397,7 @@ func bootstrapVerificationCommand(version, giteaHostname string) string {
 		"test \"$(/usr/local/bin/gitea-runner-lume version)\" = 'gitea-runner-lume " + version + "'; " +
 		"test \"$(node --version)\" = 'v" + bootstrapNodeVersion + "'; " +
 		"xcrun --find git >/dev/null; " +
+		xcodeVerificationCommand(requireXcode) + "; " +
 		guestResolutionCommand(giteaHostname) + "; " +
 		"printf 'GRL_BOOTSTRAP_OK\\n'; cat /etc/gitea-runner-lume/guest.key.pub; node --version; git --version"
 }
@@ -422,7 +441,7 @@ if ! xcrun --find git >/dev/null 2>&1; then
   trap - EXIT
 fi
 xcrun --find git >/dev/null
-
+` + xcodeInstallScript() + `
 echo 'bootstrap: installing verified Node runtime'
 node_version=` + bootstrapNodeVersion + `
 node_archive="node-v${node_version}-darwin-arm64.tar.gz"
