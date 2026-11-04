@@ -20,7 +20,7 @@ func TestXcodeInstallRunsWhileAdministratorStillExists(t *testing.T) {
 	require.Positive(t, install)
 	require.Less(t, install, strings.Index(script, "dseditgroup -o edit -d lume"))
 	for _, required := range []string{
-		"codesign --verify --strict -R '" + xcodeCodeRequirement + "'", "CFBundleIdentifier)\" = 'com.apple.dt.Xcode'",
+		"codesign --verify --strict -R '" + xcodeCodeRequirement + "'", "Contents/Info.plist\")\" = 'com.apple.dt.Xcode'",
 		"chown -R root:wheel '/Applications/Xcode.app'",
 		"xcode-select --switch '/Applications/Xcode.app/Contents/Developer'",
 		"xcodebuild -license accept", "xcodebuild -runFirstLaunch",
@@ -57,7 +57,7 @@ func TestValidateXcodeBundleRefusesNonXcodeBundles(t *testing.T) {
 
 func TestValidateXcodeBundleRefusesOtherAndUnsignedBundles(t *testing.T) {
 	if runtime.GOOS != "darwin" {
-		t.Skip("defaults and codesign are macOS-only")
+		t.Skip("plutil and codesign are macOS-only")
 	}
 	other := filepath.Join(t.TempDir(), "Other.app", "Contents")
 	require.NoError(t, os.MkdirAll(other, 0o755))

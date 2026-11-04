@@ -48,7 +48,7 @@ func validateXcodeBundle(ctx context.Context, path string) (string, error) {
 	if !info.IsDir() || filepath.Ext(cleaned) != ".app" {
 		return "", errors.New("--xcode must name an Xcode .app bundle directory")
 	}
-	identifier, err := xcodeCommand(ctx, "/usr/bin/defaults", "read", filepath.Join(cleaned, "Contents", "Info"), "CFBundleIdentifier").Output()
+	identifier, err := xcodeCommand(ctx, "/usr/bin/plutil", "-extract", "CFBundleIdentifier", "raw", "-o", "-", filepath.Join(cleaned, "Contents", "Info.plist")).Output()
 	if err != nil {
 		return "", fmt.Errorf("read Xcode bundle identifier: %w", err)
 	}
@@ -99,7 +99,7 @@ if [ -d '` + xcodeStagingDir + `' ]; then
   echo 'bootstrap: installing Xcode'
   staged="$(find '` + xcodeStagingDir + `' -mindepth 1 -maxdepth 1 -name '*.app' -type d)"
   test -n "$staged"
-  test "$(defaults read "$staged/Contents/Info" CFBundleIdentifier)" = '` + xcodeBundleIdentifier + `'
+  test "$(plutil -extract CFBundleIdentifier raw -o - "$staged/Contents/Info.plist")" = '` + xcodeBundleIdentifier + `'
   codesign --verify --strict -R '` + xcodeCodeRequirement + `' "$staged"
   rm -rf '` + xcodeInstallPath + `'
   mv "$staged" '` + xcodeInstallPath + `'
