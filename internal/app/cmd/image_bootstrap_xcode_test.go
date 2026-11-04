@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -19,7 +20,7 @@ func TestXcodeInstallRunsWhileAdministratorStillExists(t *testing.T) {
 	require.Positive(t, install)
 	require.Less(t, install, strings.Index(script, "dseditgroup -o edit -d lume"))
 	for _, required := range []string{
-		"codesign --verify --strict '-R==anchor apple'", "CFBundleIdentifier)\" = 'com.apple.dt.Xcode'",
+		"codesign --verify --strict -R '" + xcodeCodeRequirement + "'", "CFBundleIdentifier)\" = 'com.apple.dt.Xcode'",
 		"chown -R root:wheel '/Applications/Xcode.app'",
 		"xcode-select --switch '/Applications/Xcode.app/Contents/Developer'",
 		"xcodebuild -license accept", "xcodebuild -runFirstLaunch",
@@ -58,4 +59,16 @@ func TestValidateXcodeBundleRefusesNonXcodeBundles(t *testing.T) {
 <plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.example.Other</string></dict></plist>`), 0o644))
 	_, err = validateXcodeBundle(ctx, filepath.Dir(other))
 	require.ErrorContains(t, err, "is not com.apple.dt.Xcode")
+}
+
+func TestValidateXcodeBundleRefusesUnsignedImpostor(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("codesign is macOS-only")
+	}
+	contents := filepath.Join(t.TempDir(), "Xcode.app", "Contents")
+	require.NoError(t, os.MkdirAll(contents, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(contents, "Info.plist"), []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.apple.dt.Xcode</string></dict></plist>`), 0o644))
+	_, err := validateXcodeBundle(context.Background(), filepath.Dir(contents))
+	require.ErrorContains(t, err, "not a valid Apple-signed app")
 }

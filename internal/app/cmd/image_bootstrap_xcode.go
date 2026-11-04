@@ -18,9 +18,10 @@ import (
 
 const (
 	xcodeBundleIdentifier = "com.apple.dt.Xcode"
-	// Only Apple-signed bundles are accepted, on the controller and again in
-	// the guest after transfer.
-	xcodeCodeRequirement = "=anchor apple"
+	// Only Apple's own Xcode is accepted, on the controller and again in the
+	// guest after transfer: the developer download is signed "anchor apple",
+	// the Mac App Store copy by Apple's App Store certificate (field 6.1.9).
+	xcodeCodeRequirement = `=identifier "com.apple.dt.Xcode" and (anchor apple or (anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9]))`
 	xcodeStagingDir      = "/tmp/gitea-runner-lume.xcode"
 	xcodeInstallPath     = "/Applications/Xcode.app"
 )
@@ -54,7 +55,7 @@ func validateXcodeBundle(ctx context.Context, path string) (string, error) {
 	if strings.TrimSpace(string(identifier)) != xcodeBundleIdentifier {
 		return "", fmt.Errorf("--xcode bundle is not %s", xcodeBundleIdentifier)
 	}
-	if output, err := xcodeCommand(ctx, "/usr/bin/codesign", "--verify", "--strict", "-R="+xcodeCodeRequirement, cleaned).CombinedOutput(); err != nil {
+	if output, err := xcodeCommand(ctx, "/usr/bin/codesign", "--verify", "--strict", "-R", xcodeCodeRequirement, cleaned).CombinedOutput(); err != nil {
 		return "", fmt.Errorf("Xcode bundle is not a valid Apple-signed app: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return cleaned, nil
@@ -99,7 +100,7 @@ if [ -d '` + xcodeStagingDir + `' ]; then
   staged="$(find '` + xcodeStagingDir + `' -mindepth 1 -maxdepth 1 -name '*.app' -type d)"
   test -n "$staged"
   test "$(defaults read "$staged/Contents/Info" CFBundleIdentifier)" = '` + xcodeBundleIdentifier + `'
-  codesign --verify --strict '-R=` + xcodeCodeRequirement + `' "$staged"
+  codesign --verify --strict -R '` + xcodeCodeRequirement + `' "$staged"
   rm -rf '` + xcodeInstallPath + `'
   mv "$staged" '` + xcodeInstallPath + `'
   rm -rf '` + xcodeStagingDir + `'
