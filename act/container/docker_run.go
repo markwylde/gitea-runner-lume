@@ -1351,15 +1351,15 @@ func overlayVolumes(dst, src *container.HostConfig) {
 
 type validVolumeMatcher struct {
 	allowAll bool
-	named    []glob.Glob
-	host     []glob.Glob
+	named    []*glob.Pattern
+	host     []*glob.Pattern
 }
 
 func newValidVolumeMatcher(ctx context.Context, validVolumes []string) validVolumeMatcher {
 	logger := common.Logger(ctx)
 	ret := validVolumeMatcher{
-		named: make([]glob.Glob, 0, len(validVolumes)),
-		host:  make([]glob.Glob, 0, len(validVolumes)),
+		named: make([]*glob.Pattern, 0, len(validVolumes)),
+		host:  make([]*glob.Pattern, 0, len(validVolumes)),
 	}
 
 	for _, v := range validVolumes {

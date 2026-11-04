@@ -11,7 +11,7 @@ off; source review alone is not a production claim.
 | Lume | 0.5.1 CLI, tag `lume-v0.5.1` | create, get, clone, set, run, stop, delete, and interruption recovery passed |
 | Controller | Apple Silicon macOS | macOS 26.5.2 arm64 passed |
 | Guest | Apple Silicon macOS, exact host/guest runner revision | macOS 26.6.1 arm64, Node 24.19.0, Apple Git 2.50.1 passed |
-| Go | `go1.26.5` toolchain from `go.mod` | local unit/race/vet build passed |
+| Go | `go1.27.3` toolchain from `go.mod` | local unit/race/vet build passed |
 
 Configuration allows only exact `lume --version` strings listed by the
 operator. Signed image manifests bind the guest OS, architecture, OS version,
