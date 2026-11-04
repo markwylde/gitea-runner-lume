@@ -115,3 +115,11 @@ func TestAquaRunnerFallbackStatusIsPublishedWhole(t *testing.T) {
 	_, err = os.Stat(exitFile + ".partial")
 	require.True(t, os.IsNotExist(err), "no partial status is left behind")
 }
+
+func TestAquaJobPrintShowsExitIgnoresJobsLaunchdHasNotStarted(t *testing.T) {
+	// launchctl print output straight after bootstrap, before the job spawns.
+	require.False(t, aquaJobPrintShowsExit("\tstate = not running\n\tlast exit code = (never exited)\n"))
+	require.False(t, aquaJobPrintShowsExit("\tstate = running\n\tlast exit code = (never exited)\n"))
+	require.True(t, aquaJobPrintShowsExit("\tstate = not running\n\tlast exit code = 0\n"))
+	require.True(t, aquaJobPrintShowsExit("\tstate = not running\n\tlast exit code = 1\n"))
+}

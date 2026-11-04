@@ -188,8 +188,17 @@ func aquaJobExited(domain, label string) bool {
 	if err != nil {
 		return false
 	}
-	text := string(output)
-	return strings.Contains(text, "state = not running") && strings.Contains(text, "last exit code")
+	return aquaJobPrintShowsExit(string(output))
+}
+
+// aquaJobPrintShowsExit reports whether launchctl print output describes a job
+// that ran and exited. Straight after bootstrap, before launchd spawns it, a
+// job also prints "state = not running" with "last exit code = (never
+// exited)"; treating that as an exit failed slow-to-start steps at once.
+func aquaJobPrintShowsExit(text string) bool {
+	return strings.Contains(text, "state = not running") &&
+		strings.Contains(text, "last exit code") &&
+		!strings.Contains(text, "(never exited)")
 }
 
 type exitStatusError struct{ code int }
