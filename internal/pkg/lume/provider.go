@@ -25,6 +25,12 @@ const (
 
 var identifierPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 
+// Lume writes its own diagnostics to stdout alongside the requested payload,
+// e.g. "[2026-09-06T21:39:33Z] ERROR: Failed to get VM details storage=home".
+// Such a line starts with '[', so a JSON decoder reads it as an array and
+// fails on the first '-' of the date. They are dropped before decoding.
+var lumeLogLinePattern = regexp.MustCompile(`^\[\d{4}-\d{2}-\d{2}T[0-9:.]+Z?\] [A-Z]+:`)
+
 type VMState string
 
 const (
@@ -134,7 +140,7 @@ func (p *Provider) List(ctx context.Context) ([]VM, error) {
 		return nil, err
 	}
 	var details []lumeVMDetails
-	if err := decodeStrict(result.Stdout, &details); err != nil {
+	if err := decodeStrict(jsonPayload(result.Stdout), &details); err != nil {
 		return nil, fmt.Errorf("decode Lume VM list: %w", err)
 	}
 	vms := make([]VM, len(details))
@@ -161,7 +167,7 @@ func (p *Provider) Get(ctx context.Context, id string) (VM, error) {
 		return VM{}, err
 	}
 	var details []lumeVMDetails
-	if err := decodeStrict(result.Stdout, &details); err != nil {
+	if err := decodeStrict(jsonPayload(result.Stdout), &details); err != nil {
 		return VM{}, fmt.Errorf("decode Lume VM: %w", err)
 	}
 	if len(details) != 1 {
@@ -216,6 +222,12 @@ func (p *Provider) Stop(ctx context.Context, id string, force bool) error {
 	if !validIdentifier(id) {
 		return errors.New("VM identifier is invalid")
 	}
+	// Lume terminates itself with SIGINT when asked to stop a VM that is not
+	// running, which surfaces as a signal exit the runner cannot distinguish
+	// from a real failure. Stopping an already-stopped VM is a no-op instead.
+	if vm, err := p.Get(ctx, id); err == nil && vm.State == StateStopped {
+		return nil
+	}
 	args := []string{"stop", id, "--storage", p.storage}
 	_ = force // Lume 0.4 stop has no force flag; process termination is separate.
 	_, err := p.run(ctx, args...)
@@ -228,7 +240,19 @@ func (p *Provider) DeleteOwned(ctx context.Context, evidence OwnershipEvidence, 
 	}
 	vm, err := p.Get(ctx, evidence.VMID)
 	if err != nil {
-		return fmt.Errorf("inspect VM before deletion: %w", err)
+		// A worker that is no longer in the inventory needs no deletion. Treating
+		// an unreadable inspection as fatal used to strand the VM forever, because
+		// the caller never reached the delete below.
+		vms, listErr := p.List(ctx)
+		if listErr != nil {
+			return fmt.Errorf("inspect VM before deletion: %w", errors.Join(err, listErr))
+		}
+		for _, candidate := range vms {
+			if candidate.ID == evidence.VMID {
+				return fmt.Errorf("inspect VM before deletion: %w", err)
+			}
+		}
+		return nil
 	}
 	if vm.ID != evidence.VMID || vm.Name != evidence.VMName || vm.Storage != evidence.Storage {
 		return errors.New("provider VM does not match durable ownership evidence")
@@ -324,6 +348,23 @@ func convertVM(details lumeVMDetails) (VM, error) {
 
 func validIdentifier(value string) bool {
 	return len(value) <= maxIdentifierLen && identifierPattern.MatchString(value)
+}
+
+// jsonPayload removes Lume's log lines from command output so that only the
+// JSON document it was asked for reaches the decoder.
+func jsonPayload(stdout []byte) []byte {
+	if !bytes.Contains(stdout, []byte("] ")) {
+		return stdout
+	}
+	lines := bytes.Split(stdout, []byte("\n"))
+	kept := lines[:0]
+	for _, line := range lines {
+		if lumeLogLinePattern.Match(bytes.TrimRight(line, "\r")) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return bytes.Join(kept, []byte("\n"))
 }
 
 func decodeStrict(data []byte, destination any) error {

@@ -62,6 +62,34 @@ func TestReconcileDeletesResidualVMForCompletedLease(t *testing.T) {
 	require.Equal(t, []string{"/opt/homebrew/bin/lume", "delete", "worker-a", "--force", "--storage", "default"}, runner.calls[2])
 }
 
+func TestReconcileDeletesStoppedWorkerAfterCleanupFailureWithoutStoppingAgain(t *testing.T) {
+	store, err := NewLeaseStore(filepath.Join(t.TempDir(), "leases"))
+	require.NoError(t, err)
+	lease := validLease()
+	lease.Phase = PhaseCleanupError
+	require.NoError(t, store.Create(lease))
+	runner := &fakeRunner{results: []Result{
+		{Stdout: []byte(stoppedVMJSON)},
+		{Stdout: []byte(stoppedVMJSON)},
+		{},
+		{Stdout: []byte(`[]`)},
+	}}
+	provider, err := NewProvider("/opt/homebrew/bin/lume", "default", time.Second, runner)
+	require.NoError(t, err)
+
+	results, err := Reconcile(t.Context(), store, provider, lease.Ownership.InstallationID, lease.Ownership.Storage)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.NoError(t, results[0].Err)
+	require.Equal(t, PhaseComplete, results[0].Phase)
+	require.Equal(t, [][]string{
+		{"/opt/homebrew/bin/lume", "ls", "--format", "json", "--storage", "default"},
+		{"/opt/homebrew/bin/lume", "get", "worker-a", "--format", "json", "--storage", "default"},
+		{"/opt/homebrew/bin/lume", "delete", "worker-a", "--force", "--storage", "default"},
+		{"/opt/homebrew/bin/lume", "ls", "--format", "json", "--storage", "default"},
+	}, runner.calls)
+}
+
 func TestReconcileQuarantinesStorageMismatchWithoutMutation(t *testing.T) {
 	store, err := NewLeaseStore(filepath.Join(t.TempDir(), "leases"))
 	require.NoError(t, err)

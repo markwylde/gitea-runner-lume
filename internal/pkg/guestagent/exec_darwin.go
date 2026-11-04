@@ -188,8 +188,17 @@ func aquaJobExited(domain, label string) bool {
 	if err != nil {
 		return false
 	}
-	text := string(output)
-	return strings.Contains(text, "state = not running") && strings.Contains(text, "last exit code")
+	return aquaJobPrintShowsExit(string(output))
+}
+
+// aquaJobPrintShowsExit reports whether launchctl print output describes a job
+// that ran and exited. Straight after bootstrap, before launchd spawns it, a
+// job also prints "state = not running" with "last exit code = (never
+// exited)"; treating that as an exit failed slow-to-start steps at once.
+func aquaJobPrintShowsExit(text string) bool {
+	return strings.Contains(text, "state = not running") &&
+		strings.Contains(text, "last exit code") &&
+		!strings.Contains(text, "(never exited)")
 }
 
 type exitStatusError struct{ code int }
@@ -223,9 +232,13 @@ func writeAquaCommand(path, executable string, args []string) error {
 }
 
 func writeAquaRunner(path, envFile, cmdFile, workdir, exitFile string) error {
+	// The agent polls for the exit file and reads it as soon as it exists, so
+	// the status is written beside it and renamed into place: the file never
+	// exists without its whole status in it.
 	quotedExit := shQuote(exitFile)
+	quotedPartial := shQuote(exitFile + ".partial")
 	script := fmt.Sprintf(`#!/bin/bash
-trap 'if [ ! -f %s ]; then printf "127\n" > %s; fi' EXIT
+trap 'if [ ! -f %s ]; then printf "127\n" > %s && /bin/mv -f %s %s; fi' EXIT
 /usr/bin/python3 -u - %s %s %s %s <<'PY'
 import json, os, subprocess, sys
 env_path, cmd_path, workdir, exit_path = sys.argv[1:5]
@@ -235,11 +248,13 @@ with open(cmd_path, encoding="utf-8") as handle:
     command = json.load(handle)
 os.chdir(workdir)
 result = subprocess.run(command, env=env)
-with open(exit_path, "w", encoding="utf-8") as handle:
+partial_path = exit_path + ".partial"
+with open(partial_path, "w", encoding="utf-8") as handle:
     handle.write("%%d\n" %% result.returncode)
+os.replace(partial_path, exit_path)
 raise SystemExit(result.returncode)
 PY
-`, quotedExit, quotedExit, shQuote(envFile), shQuote(cmdFile), shQuote(workdir), quotedExit)
+`, quotedExit, quotedPartial, quotedPartial, quotedExit, shQuote(envFile), shQuote(cmdFile), shQuote(workdir), quotedExit)
 	return os.WriteFile(path, []byte(script), 0o700)
 }
 
