@@ -6,8 +6,8 @@ SHASUM ?= shasum -a 256
 GORELEASER ?= goreleaser
 HAS_GO = $(shell hash $(GO) > /dev/null 2>&1 && echo "GO" || echo "NOGO" )
 XGO_PACKAGE ?= src.techknowlogick.com/xgo@v1.9.0 # renovate: datasource=go
-XGO_VERSION := go-1.26.x
-GXZ_PACKAGE ?= github.com/ulikunitz/xz/cmd/gxz@v0.5.16 # renovate: datasource=go
+XGO_VERSION := go-1.27.x
+GXZ_PACKAGE ?= github.com/ulikunitz/xz/cmd/gxz@v0.5.17 # renovate: datasource=go
 
 LINUX_ARCHS ?= linux/amd64,linux/arm64
 DARWIN_ARCHS ?= darwin-12/amd64,darwin-12/arm64
@@ -19,8 +19,8 @@ DOCKER_TAG ?= nightly
 DOCKER_REF := $(DOCKER_IMAGE):$(DOCKER_TAG)
 DOCKER_ROOTLESS_REF := $(DOCKER_IMAGE):$(DOCKER_TAG)-dind-rootless
 
-GOLANGCI_LINT_PACKAGE ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 # renovate: datasource=go
-GOVULNCHECK_PACKAGE ?= golang.org/x/vuln/cmd/govulncheck@v1.6.0 # renovate: datasource=go
+GOLANGCI_LINT_PACKAGE ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 # renovate: datasource=go
+GOVULNCHECK_PACKAGE ?= golang.org/x/vuln/cmd/govulncheck@v1.9.0 # renovate: datasource=go
 
 GOTEST_FLAGS ?= -race -timeout 20m -parallel 8
 
