@@ -56,8 +56,8 @@ func TestBootstrapScriptContainsRequiredSecurityTransitions(t *testing.T) {
 	}
 	require.Less(t, strings.Index(script, "test \"$(node --version)\""), strings.Index(script, "dseditgroup -o edit -d lume"))
 	require.Less(t, strings.Index(script, "sysadminctl -adminUser lume"), strings.Index(script, "dseditgroup -o edit -d lume"))
-	require.Contains(t, bootstrapVerificationCommand("1.2.3", "git.internal.example"), "autoLoginUser")
-	require.Contains(t, bootstrapVerificationCommand("1.2.3", "git.internal.example"), "launchctl print gui/")
+	require.Contains(t, bootstrapVerificationCommand("1.2.3", "git.internal.example", false), "autoLoginUser")
+	require.Contains(t, bootstrapVerificationCommand("1.2.3", "git.internal.example", false), "launchctl print gui/")
 }
 
 func TestRegisteredGiteaHostnameAcceptsOnlySafeHostnamesAndIPs(t *testing.T) {

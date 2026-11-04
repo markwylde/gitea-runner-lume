@@ -51,6 +51,19 @@ bootstrap creates a hidden maintenance administrator with a random discarded
 password. SSH remains restricted to the non-administrator workflow user, and
 the controller retains no reusable administrator credential.
 
+Bootstrap optionally installs full Xcode with `--xcode PATH`, naming an
+`Xcode.app` bundle the operator already has. The controller refuses a bundle
+that is not `com.apple.dt.Xcode` or does not satisfy Apple's code-signing
+anchor, streams it into the guest, and the guest verifies the same identity and
+signature again before installing it at `/Applications/Xcode.app`, owned by
+root, as the active developer directory with its licence accepted and first
+launch completed. Installation happens before administrator access is removed,
+so it is only possible on a freshly created VM; asking for Xcode on an already
+hardened image that lacks it fails without modifying the guest. Verification
+then requires `xcodebuild` as the workflow user. Xcode carries no signing
+identity: code-signing certificates and notarisation credentials stay out of
+the image and are supplied per job as Actions secrets.
+
 Bootstrap proves that the fresh guest can resolve the registered Gitea
 hostname. If host-only split DNS prevents resolution, bootstrap resolves that
 single hostname on the controller and installs the validated address mapping in
@@ -84,6 +97,8 @@ or incompatible base image.
 ## Acceptance outcomes
 
 - Creating and validating a clean image produces a worker-ready stopped VM.
+- Bootstrapping with `--xcode` yields an image whose workflow user can run
+  `xcodebuild`; a non-Apple or non-Xcode bundle is refused before upload.
 - The documented path from installation through an online runner contains no
   hidden mandatory guest setup steps.
 - Seeded secret and registration canaries cause validation to fail.

@@ -46,14 +46,30 @@ func (c *Client) HostKey() ssh.PublicKey {
 }
 
 func (c *Client) Run(ctx context.Context, command string, input []byte) ([]byte, error) {
-	return c.run(ctx, command, input, nil)
+	return c.run(ctx, command, bytesReader(input), nil)
 }
 
 func (c *Client) RunWithOutput(ctx context.Context, command string, input []byte, progress io.Writer) ([]byte, error) {
-	return c.run(ctx, command, input, progress)
+	return c.run(ctx, command, bytesReader(input), progress)
 }
 
-func (c *Client) run(ctx context.Context, command string, input []byte, progress io.Writer) ([]byte, error) {
+// RunStream feeds stdin from a reader, for uploads too large to hold in
+// memory, such as an application bundle.
+func (c *Client) RunStream(ctx context.Context, command string, input io.Reader) ([]byte, error) {
+	if input == nil {
+		return nil, errors.New("guest bootstrap stream input is required")
+	}
+	return c.run(ctx, command, input, nil)
+}
+
+func bytesReader(input []byte) io.Reader {
+	if input == nil {
+		return nil
+	}
+	return bytes.NewReader(input)
+}
+
+func (c *Client) run(ctx context.Context, command string, input io.Reader, progress io.Writer) ([]byte, error) {
 	if command == "" || len(command) > 16*1024 {
 		return nil, errors.New("guest bootstrap command is invalid")
 	}
@@ -80,7 +96,7 @@ func (c *Client) run(ctx context.Context, command string, input []byte, progress
 	}
 	defer session.Close()
 	if input != nil {
-		session.Stdin = bytes.NewReader(input)
+		session.Stdin = input
 	}
 	var output limitedBuffer
 	output.limit = outputLimit
