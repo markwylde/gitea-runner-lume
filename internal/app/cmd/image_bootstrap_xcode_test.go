@@ -53,22 +53,23 @@ func TestValidateXcodeBundleRefusesNonXcodeBundles(t *testing.T) {
 	_, err = validateXcodeBundle(ctx, file)
 	require.ErrorContains(t, err, ".app bundle")
 
-	other := filepath.Join(directory, "Other.app", "Contents")
+}
+
+func TestValidateXcodeBundleRefusesOtherAndUnsignedBundles(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("defaults and codesign are macOS-only")
+	}
+	other := filepath.Join(t.TempDir(), "Other.app", "Contents")
 	require.NoError(t, os.MkdirAll(other, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(other, "Info.plist"), []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.example.Other</string></dict></plist>`), 0o644))
-	_, err = validateXcodeBundle(ctx, filepath.Dir(other))
+	_, err := validateXcodeBundle(context.Background(), filepath.Dir(other))
 	require.ErrorContains(t, err, "is not com.apple.dt.Xcode")
-}
 
-func TestValidateXcodeBundleRefusesUnsignedImpostor(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("codesign is macOS-only")
-	}
 	contents := filepath.Join(t.TempDir(), "Xcode.app", "Contents")
 	require.NoError(t, os.MkdirAll(contents, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(contents, "Info.plist"), []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.apple.dt.Xcode</string></dict></plist>`), 0o644))
-	_, err := validateXcodeBundle(context.Background(), filepath.Dir(contents))
+	_, err = validateXcodeBundle(context.Background(), filepath.Dir(contents))
 	require.ErrorContains(t, err, "not a valid Apple-signed app")
 }
